@@ -20,7 +20,12 @@ interface CLIArgs {
 }
 
 function parseArgs(): CLIArgs {
-  const args = process.argv.slice(2);
+  // Find the script index (cli.ts or cli.js)
+  const scriptIndex = process.argv.findIndex(arg => arg.endsWith('cli.ts') || arg.endsWith('cli.js'));
+  const args = process.argv.slice(scriptIndex + 1);
+  console.log('[DEBUG] process.argv:', process.argv);
+  console.log('[DEBUG] scriptIndex:', scriptIndex);
+  console.log('[DEBUG] args to parse:', args);
   const parsed: CLIArgs = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -213,6 +218,7 @@ async function runHealthCheck(): Promise<void> {
 // Main CLI execution
 async function main(): Promise<void> {
   const args = parseArgs();
+  console.log('[DEBUG] parsed CLI args:', args);
 
   // Handle help
   if (args.help) {
@@ -282,11 +288,9 @@ process.on('unhandledRejection', (reason) => {
 });
 
 // Execute main function
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error) => {
-    console.error('\n❌ CLI error:', error);
-    process.exit(1);
-  });
-}
+main().catch((error) => {
+  console.error('\n❌ CLI error:', error);
+  process.exit(1);
+});
 
 export { main, runDelphiProcess, runHealthCheck }; 

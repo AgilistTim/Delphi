@@ -5,6 +5,7 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import { sanitizeCitations } from '../utils/citation-sanitize.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -47,7 +48,21 @@ export class ContrarianAgent {
 
       const userMessage = `Challenge the emerging consensus in this synthesis. Focus on the dominant viewpoints and identify their weaknesses, blind spots, and alternative interpretations. Be constructively critical and provide counter-evidence where possible.`;
 
-      // Define search function for finding counter-evidence
+      // 1. Generate critique/alternative using OpenAI (no tool calls)
+      const critiqueCompletion = await this.openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage + '\n\nFirst, summarize your critique and alternative framework. Do not cite sources yet.' }
+        ],
+        temperature: 0.8,
+        max_tokens: 600
+      });
+      const critiqueContext = critiqueCompletion.choices[0]?.message?.content || '';
+
+      // 2. Now allow tool call for counter-evidence/citations if needed
+      const contrarianPrompt = userMessage + `\n\nYour critique/alternative:\n${critiqueContext}\n\nIf you need to cite counter-evidence or require web/academic/recent research, use the search_counter_evidence tool.`;
+
       const searchFunction = {
         type: 'function' as const,
         function: {
@@ -71,39 +86,33 @@ export class ContrarianAgent {
         }
       };
 
-      // Generate initial response with search capability
       const completion = await this.openai.chat.completions.create({
         model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage }
+          { role: 'user', content: contrarianPrompt }
         ],
         tools: [searchFunction],
         tool_choice: 'auto',
-        temperature: 0.8, // Higher temperature for more creative challenging
+        temperature: 0.8,
         max_tokens: 1500
       });
 
       let finalResponse = completion.choices[0]?.message;
 
-      // Handle tool calls for counter-evidence search
+      // Only call Perplexity if the contrarian requests a search (tool call)
       if (finalResponse?.tool_calls) {
         const toolCallResults = [];
-        
         for (const toolCall of finalResponse.tool_calls) {
           if (toolCall.function?.name === 'search_counter_evidence') {
             const args = JSON.parse(toolCall.function.arguments);
-            console.log(`[Contrarian] Searching for counter-evidence: ${args.query}`);
-            
+            console.log(`[Contrarian] Searching for counter-evidence (Perplexity): ${args.query}`);
             try {
-              // Modify search query to find dissenting views
               const contrarianQuery = this.enhanceQueryForCounterEvidence(args.query, args.focus);
-              
               const searchResult = await this.perplexity.search({
                 query: contrarianQuery,
-                searchContextSize: 'medium'
+                searchContextSize: 'low' // Use low context for cost control
               });
-              
               toolCallResults.push({
                 tool_call_id: toolCall.id,
                 role: 'tool' as const,
@@ -127,20 +136,18 @@ export class ContrarianAgent {
             }
           }
         }
-
-        // Get the final contrarian response
+        // Get the final contrarian response after tool calls
         const followUpCompletion = await this.openai.chat.completions.create({
           model: 'gpt-4o',
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage },
+            { role: 'user', content: contrarianPrompt },
             finalResponse,
             ...toolCallResults
           ],
           temperature: 0.8,
           max_tokens: 1500
         });
-
         finalResponse = followUpCompletion.choices[0]?.message;
       }
 
@@ -155,21 +162,18 @@ export class ContrarianAgent {
         const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
         const jsonString = jsonMatch ? jsonMatch[0] : responseContent;
         parsedResponse = JSON.parse(jsonString);
+        if (Array.isArray(parsedResponse.counter_evidence)) {
+          parsedResponse.counter_evidence = sanitizeCitations(parsedResponse.counter_evidence);
+        }
       } catch (error) {
         console.error('Failed to parse contrarian JSON response:', responseContent);
         throw new Error(`Failed to parse contrarian response as JSON: ${error}`);
       }
 
-      // Ensure agent_id is set
       parsedResponse.agent_id = this.agentId;
-
-      // Validate the response using Zod
       const validatedResponse = ContrarianResponseSchema.parse(parsedResponse);
-
       console.log(`[Contrarian] Generated critique with ${validatedResponse.blind_spots.length} blind spots identified`);
-      
       return validatedResponse;
-
     } catch (error) {
       console.error('Contrarian agent error:', error);
       throw new Error(`Contrarian agent failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

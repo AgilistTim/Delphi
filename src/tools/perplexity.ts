@@ -38,89 +38,106 @@ export class PerplexityTool {
   }
 
   /**
-   * Search for information using Perplexity API
+   * Search for information using Perplexity API, with retry logic
    */
   async search(params: SearchParams): Promise<{
     content: string;
     citations: Citation[];
     searchResults: SearchResult[];
   }> {
-    try {
-      // Format date filters if present
-      let search_after_date_filter: string | undefined = undefined;
-      let search_before_date_filter: string | undefined = undefined;
-      if (params.dateFilter?.after) {
-        const afterDate = new Date(params.dateFilter.after);
-        search_after_date_filter = PerplexityTool.formatDateMMDDYYYY(afterDate);
-      }
-      if (params.dateFilter?.before) {
-        const beforeDate = new Date(params.dateFilter.before);
-        search_before_date_filter = PerplexityTool.formatDateMMDDYYYY(beforeDate);
-      }
+    const maxRetries = 3;
+    let attempt = 0;
+    let lastError: any = null;
+    while (attempt < maxRetries) {
+      try {
+        // Format date filters if present
+        let search_after_date_filter: string | undefined = undefined;
+        let search_before_date_filter: string | undefined = undefined;
+        if (params.dateFilter?.after) {
+          const afterDate = new Date(params.dateFilter.after);
+          search_after_date_filter = PerplexityTool.formatDateMMDDYYYY(afterDate);
+        }
+        if (params.dateFilter?.before) {
+          const beforeDate = new Date(params.dateFilter.before);
+          search_before_date_filter = PerplexityTool.formatDateMMDDYYYY(beforeDate);
+        }
 
-      const payload = {
-        model: this.model,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a research assistant. Provide detailed, well-sourced information with proper citations. Be objective and comprehensive in your analysis.'
+        const payload = {
+          model: this.model,
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a research assistant. Provide detailed, well-sourced information with proper citations. Be objective and comprehensive in your analysis.'
+            },
+            {
+              role: 'user', 
+              content: params.query
+            }
+          ],
+          search_mode: params.searchMode || 'web',
+          web_search_options: {
+            search_context_size: params.searchContextSize || 'medium'
           },
-          {
-            role: 'user', 
-            content: params.query
-          }
-        ],
-        search_mode: params.searchMode || 'web',
-        web_search_options: {
-          search_context_size: params.searchContextSize || 'medium'
-        },
-        return_citations: true,
-        ...(params.domainFilter && { search_domain_filter: params.domainFilter }),
-        ...(search_after_date_filter && { search_after_date_filter }),
-        ...(search_before_date_filter && { search_before_date_filter })
-      };
+          return_citations: true,
+          ...(params.domainFilter && { search_domain_filter: params.domainFilter }),
+          ...(search_after_date_filter && { search_after_date_filter }),
+          ...(search_before_date_filter && { search_before_date_filter })
+        };
 
-      const response: AxiosResponse = await this.client.post('/chat/completions', payload);
-      
-      const data = response.data;
-      
-      // Extract content
-      const content = data.choices?.[0]?.message?.content || '';
-      
-      // Extract citations from response
-      const citations: Citation[] = sanitizeCitations(data.citations);
+        const response: AxiosResponse = await this.client.post('/chat/completions', payload);
+        
+        const data = response.data;
+        
+        // Extract content
+        const content = data.choices?.[0]?.message?.content || '';
+        
+        // Extract citations from response
+        const citations: Citation[] = sanitizeCitations(data.citations);
 
-      // Extract search results if available
-      const searchResults: SearchResult[] = (data.search_results || []).map((result: any) => ({
-        title: result.title || 'Untitled',
-        url: result.url || '',
-        date: result.date,
-        summary: result.summary || content.substring(0, 200) + '...',
-        relevance_score: 0.8 // Default relevance
-      }));
+        // Extract search results if available
+        const searchResults: SearchResult[] = (data.search_results || []).map((result: any) => ({
+          title: result.title || 'Untitled',
+          url: result.url || '',
+          date: result.date,
+          summary: result.summary || content.substring(0, 200) + '...',
+          relevance_score: 0.8 // Default relevance
+        }));
 
-      // If no search results but we have citations, create search results from citations
-      if (searchResults.length === 0 && citations.length > 0) {
-        citations.forEach((citation, index) => {
-          searchResults.push({
-            title: citation.title,
-            url: citation.url,
-            summary: `Reference material ${index + 1}`,
-            relevance_score: 0.7
+        // If no search results but we have citations, create search results from citations
+        if (searchResults.length === 0 && citations.length > 0) {
+          citations.forEach((citation, index) => {
+            searchResults.push({
+              title: citation.title,
+              url: citation.url,
+              summary: `Reference material ${index + 1}`,
+              relevance_score: 0.7
+            });
           });
-        });
+        }
+
+        return {
+          content,
+          citations,
+          searchResults
+        };
+      } catch (error: any) {
+        lastError = error;
+        // Retry on timeout or 5xx errors
+        const isTimeout = error.message && error.message.includes('timeout');
+        const is5xx = error.response && error.response.status >= 500 && error.response.status < 600;
+        if ((isTimeout || is5xx) && attempt < maxRetries - 1) {
+          const backoff = 1000 * Math.pow(2, attempt); // Exponential backoff: 1s, 2s, 4s
+          console.warn(`Perplexity API error (attempt ${attempt + 1}): ${error.message || error}. Retrying in ${backoff / 1000}s...`);
+          await new Promise(res => setTimeout(res, backoff));
+          attempt++;
+          continue;
+        }
+        // Otherwise, throw
+        console.error('Perplexity API Error:', error.response?.data || error.message);
+        throw new Error(`Perplexity API failed: ${error.response?.data?.error || error.message}`);
       }
-
-      return {
-        content,
-        citations,
-        searchResults
-      };
-
-    } catch (error) {
-      console.error('Search failed:', error);
-      throw new Error(`Failed to search: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+    throw new Error(`Perplexity API failed after ${maxRetries} attempts: ${lastError?.message || lastError}`);
   }
 
   /**

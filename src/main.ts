@@ -18,7 +18,6 @@ import {
   RoundSynthesis,
   DelphiReport,
   AgentConfig,
-  EXPERT_ROLES,
   APIConfig
 } from './types/index.js';
 
@@ -75,11 +74,13 @@ export class DelphiAgent {
    */
   async runDelphiProcess(
     prompt: DelphiPrompt,
-    expertCount: number = 5,
-    customExpertRoles?: string[]
+    expertCount: number = 5
   ): Promise<DelphiReport> {
     console.log(`\n🚀 Starting Delphi process: "${prompt.question}"`);
     console.log(`📊 Configuration: ${expertCount} experts, max ${this.maxRounds} rounds\n`);
+
+    // Structured log for all agent requests/responses
+    const agentLogs: any[] = [];
 
     try {
       // Generate detailed expert personas using OpenAI
@@ -95,16 +96,19 @@ export class DelphiAgent {
         expertResponses: ExpertResponse[];
         synthesis: RoundSynthesis;
         contrarianResponses: ContrarianResponse[];
+        failedExperts?: { role: string; error: string }[];
       }[] = [];
 
       // Execute Delphi rounds
       for (let round = 1; round <= this.maxRounds; round++) {
         console.log(`\n📋 === ROUND ${round} ===`);
         
-        const roundResult = await this.executeRound(
+        const roundResult = await this.executeRoundWithValidation(
           round,
           prompt,
-          round > 1 ? roundResults[round - 2].synthesis : undefined
+          round > 1 ? roundResults[round - 2].synthesis : undefined,
+          personas,
+          agentLogs
         );
 
         roundResults.push(roundResult);
@@ -128,10 +132,16 @@ export class DelphiAgent {
       }
 
       // Generate final report
-      const report = await this.generateFinalReport(prompt, roundResults);
+      const report = await this.generateFinalReportWithSupport(
+        prompt,
+        roundResults,
+        personas.length
+      );
       
       // Save report to file
       await this.saveReport(report);
+      // Save agent logs to file
+      await this.saveAgentLogs(agentLogs, prompt.question);
 
       console.log(`\n🎉 Delphi process completed successfully!`);
       console.log(`📄 Report saved to: ${this.getReportFilename(prompt.question)}`);
@@ -145,22 +155,38 @@ export class DelphiAgent {
   }
 
   /**
-   * Execute a single round of the Delphi process
+   * Execute a single round of the Delphi process, logging failed expert validations
    */
-  private async executeRound(
+  private async executeRoundWithValidation(
     roundNumber: number,
     prompt: DelphiPrompt,
-    previousSynthesis?: RoundSynthesis
+    previousSynthesis: RoundSynthesis | undefined,
+    _personas: PersonaSpec[],
+    agentLogs: any[]
   ): Promise<{
     expertResponses: ExpertResponse[];
     synthesis: RoundSynthesis;
     contrarianResponses: ContrarianResponse[];
+    failedExperts: { role: string; error: string }[];
   }> {
-    
+    // Phase 0: Perplexity background research (batch)
+    console.log(`\n🔎 Phase 0: Perplexity background research (shared)`);
+    let perplexityBackground: { content: string; citations: any[]; searchResults: any[] } = { content: '', citations: [], searchResults: [] };
+    try {
+      perplexityBackground = await this.perplexity.search({
+        query: prompt.question,
+        searchContextSize: 'low'
+      });
+      console.log(`   ✅ Perplexity background research complete (shared with all experts)`);
+    } catch (error) {
+      console.warn('   ⚠️  Perplexity background research failed:', error);
+    }
+
     // Phase 1: Expert responses
     console.log(`\n🧠 Phase 1: Gathering expert opinions (${this.experts.length} experts)`);
     
     const expertResponses: ExpertResponse[] = [];
+    const failedExperts: { role: string; error: string }[] = [];
     const synthesisContext = previousSynthesis ? 
       this.orchestrator.formatSynthesisForReview(previousSynthesis) : undefined;
 
@@ -168,9 +194,42 @@ export class DelphiAgent {
     const expertPromises = this.experts.map(async (expert, index) => {
       try {
         console.log(`   [${index + 1}/${this.experts.length}] ${expert.getRole()} responding...`);
-        return await expert.generateResponse(prompt, synthesisContext, roundNumber);
-      } catch (error) {
+        // Restore original Perplexity methods if previously patched
+        if ((expert as any)._originalPerplexitySearch) {
+          expert['perplexity'].search = (expert as any)._originalPerplexitySearch;
+          expert['perplexity'].searchAcademic = (expert as any)._originalPerplexitySearchAcademic;
+          expert['perplexity'].searchRecent = (expert as any)._originalPerplexitySearchRecent;
+          expert['perplexity'].searchDomains = (expert as any)._originalPerplexitySearchDomains;
+        }
+        // Pass Perplexity background as part of context
+        const expertPrompt = {
+          ...prompt,
+          context: [
+            prompt.context || '',
+            `\n---\nPerplexity background research (shared):\n${perplexityBackground.content}\nCitations: ${perplexityBackground.citations.map(c => `${c.title}: ${c.url}`).join(' | ')}`,
+            synthesisContext || ''
+          ].filter(Boolean).join('\n\n')
+        };
+        // Adjust expert prompt to encourage use of shared research
+        (expert as any).promptTemplate = (expert as any).promptTemplate.replace(
+          'Please provide your expert analysis as a',
+          'Please use the shared background research and citations provided below. Only request additional web/academic search if absolutely necessary for a unique point. Provide your expert analysis as a'
+        );
+        // Log request
+        const logEntry: any = {
+          agent_type: 'expert',
+          agent_id: expert.getId(),
+          role: expert.getRole(),
+          round: roundNumber,
+          request: expertPrompt,
+        };
+        const response = await expert.generateResponse(expertPrompt, undefined, roundNumber);
+        logEntry.response = response;
+        agentLogs.push(logEntry);
+        return response;
+      } catch (error: any) {
         console.error(`   ❌ Expert ${expert.getRole()} failed:`, error);
+        failedExperts.push({ role: expert.getRole(), error: error?.toString() });
         return null;
       }
     });
@@ -180,7 +239,11 @@ export class DelphiAgent {
       if (result) expertResponses.push(result);
     });
 
-    console.log(`   ✅ Collected ${expertResponses.length} expert responses`);
+    console.log(`   ✅ Collected ${expertResponses.length} expert responses (of ${this.experts.length})`);
+    if (failedExperts.length > 0) {
+      console.warn(`   ⚠️  ${failedExperts.length} expert(s) failed validation.`);
+      failedExperts.forEach(f => console.warn(`      - ${f.role}: ${f.error}`));
+    }
 
     // Phase 2: Synthesis
     console.log(`\n🔄 Phase 2: Synthesizing responses`);
@@ -203,7 +266,21 @@ export class DelphiAgent {
       const contrarianPromises = this.contrarians.map(async (contrarian, index) => {
         try {
           console.log(`   [${index + 1}/${this.contrarians.length}] Contrarian ${index + 1} challenging...`);
-          return await contrarian.generateResponse(synthesis, dominantClusters);
+          // Log request
+          const logEntry: any = {
+            agent_type: 'contrarian',
+            agent_id: contrarian.getId(),
+            role: `Contrarian ${index + 1}`,
+            round: roundNumber,
+            request: {
+              synthesis,
+              dominantClusters
+            }
+          };
+          const response = await contrarian.generateResponse(synthesis, dominantClusters);
+          logEntry.response = response;
+          agentLogs.push(logEntry);
+          return response;
         } catch (error) {
           console.error(`   ❌ Contrarian ${index + 1} failed:`, error);
           return null;
@@ -223,7 +300,8 @@ export class DelphiAgent {
     return {
       expertResponses,
       synthesis,
-      contrarianResponses
+      contrarianResponses,
+      failedExperts
     };
   }
 
@@ -261,97 +339,31 @@ export class DelphiAgent {
   }
 
   /**
-   * Select diverse expert roles
+   * Generate the final Delphi report, clarifying support level
    */
-  private selectDiverseRoles(count: number): string[] {
-    const availableRoles = [...EXPERT_ROLES];
-    const selectedRoles: string[] = [];
-
-    // Randomly select diverse roles
-    while (selectedRoles.length < count && availableRoles.length > 0) {
-      const randomIndex = Math.floor(Math.random() * availableRoles.length);
-      const role = availableRoles.splice(randomIndex, 1)[0];
-      selectedRoles.push(role);
-    }
-
-    // If we need more roles than available, duplicate with variations
-    while (selectedRoles.length < count) {
-      const baseRole = EXPERT_ROLES[selectedRoles.length % EXPERT_ROLES.length];
-      selectedRoles.push(`Senior ${baseRole}`);
-    }
-
-    return selectedRoles;
-  }
-
-  /**
-   * Get expertise areas for a role
-   */
-  private getExpertiseAreas(role: string): string[] {
-    const expertiseMap: Record<string, string[]> = {
-      'Technology Ethics Specialist': ['AI ethics', 'privacy', 'algorithmic fairness', 'digital rights'],
-      'Policy Researcher': ['public policy', 'regulation', 'governance', 'policy analysis'],
-      'Industry Analyst': ['market trends', 'business strategy', 'competitive analysis', 'technology adoption'],
-      'Academic Researcher': ['peer review', 'research methodology', 'theoretical frameworks', 'empirical analysis'],
-      'Legal Expert': ['regulatory compliance', 'legal frameworks', 'risk assessment', 'jurisprudence'],
-      'Economic Analyst': ['economic impact', 'cost-benefit analysis', 'market economics', 'financial modeling'],
-      'Social Scientist': ['social impact', 'behavioral analysis', 'community effects', 'societal trends'],
-      'Environmental Scientist': ['environmental impact', 'sustainability', 'climate effects', 'ecological analysis'],
-      'Public Health Expert': ['health policy', 'epidemiology', 'health systems', 'prevention strategies'],
-      'Security Analyst': ['cybersecurity', 'risk management', 'threat assessment', 'security frameworks']
-    };
-
-    return expertiseMap[role] || ['general analysis', 'critical thinking', 'evidence evaluation'];
-  }
-
-  /**
-   * Get perspective for a role
-   */
-  private getPerspective(role: string): string {
-    const perspectiveMap: Record<string, string> = {
-      'Technology Ethics Specialist': 'Focuses on ethical implications and human values',
-      'Policy Researcher': 'Emphasizes governance, regulation, and institutional approaches',
-      'Industry Analyst': 'Prioritizes market viability and business implementation',
-      'Academic Researcher': 'Values rigorous methodology and theoretical grounding',
-      'Legal Expert': 'Considers legal compliance and regulatory frameworks',
-      'Economic Analyst': 'Evaluates economic efficiency and financial implications',
-      'Social Scientist': 'Examines social dynamics and community impact',
-      'Environmental Scientist': 'Prioritizes environmental sustainability and ecological impact',
-      'Public Health Expert': 'Focuses on population health and prevention',
-      'Security Analyst': 'Emphasizes risk mitigation and security considerations'
-    };
-
-    return perspectiveMap[role] || 'Provides balanced analytical perspective';
-  }
-
-  /**
-   * Get bias instructions for a role
-   */
-  private getBiasInstructions(role: string): string {
-    return `Remember that as a ${role}, you may have inherent biases toward certain solutions or frameworks. Acknowledge these biases while maintaining objectivity.`;
-  }
-
-  /**
-   * Generate the final Delphi report
-   */
-  private async generateFinalReport(
+  private async generateFinalReportWithSupport(
     prompt: DelphiPrompt,
     roundResults: Array<{
       expertResponses: ExpertResponse[];
       synthesis: RoundSynthesis;
       contrarianResponses: ContrarianResponse[];
-    }>
-  ): Promise<DelphiReport> {
+      failedExperts?: { role: string; error: string }[];
+    }>,
+    totalExperts: number
+  ) {
     console.log(`\n📝 Generating final report`);
 
     const finalRound = roundResults[roundResults.length - 1];
     const allExpertResponses = roundResults.flatMap(r => r.expertResponses);
     const allContrarianResponses = roundResults.flatMap(r => r.contrarianResponses);
     const convergenceMetrics = this.convergenceTracker.calculateMetrics();
+    const failedExperts = roundResults.flatMap(r => r.failedExperts || []);
 
     // Generate consensus summary using AI
-    const consensusSummary = await this.generateConsensusSummary(
+    const consensusSummary = await this.generateConsensusSummaryWithSupport(
       finalRound.synthesis,
-      allExpertResponses
+      allExpertResponses,
+      totalExperts
     );
 
     // Identify dissenting views
@@ -365,19 +377,23 @@ export class DelphiAgent {
       dissenting_views: dissentingViews,
       convergence_analysis: convergenceMetrics,
       round_history: roundResults.map(r => r.synthesis),
-      generated_at: new Date()
-    };
+      generated_at: new Date(),
+      failed_experts: failedExperts
+    } as any;
 
     return report;
   }
 
   /**
-   * Generate AI-powered consensus summary
+   * Generate AI-powered consensus summary, clarifying support level
    */
-  private async generateConsensusSummary(
+  private async generateConsensusSummaryWithSupport(
     finalSynthesis: RoundSynthesis,
-    allResponses: ExpertResponse[]
+    allResponses: ExpertResponse[],
+    totalExperts: number
   ) {
+    // Defensive: supporters cannot exceed total experts
+    const supporters = Math.min(allResponses.length, totalExperts);
     const prompt = `Based on the following Delphi process results, generate a consensus summary:
 
 FINAL SYNTHESIS:
@@ -386,7 +402,7 @@ ${JSON.stringify(finalSynthesis, null, 2)}
 Generate a JSON response with:
 {
   "final_position": "Clear statement of the consensus position",
-  "support_level": "X of Y experts support this position",
+  "support_level": "${supporters} of ${totalExperts} experts support this position (the rest failed validation or did not respond)",
   "confidence_level": average_confidence_score,
   "key_evidence": [{"title": "...", "url": "...", "relevance": "..."}]
 }`;
@@ -414,7 +430,7 @@ Generate a JSON response with:
       // Fallback summary
       return {
         final_position: "Multiple expert perspectives were synthesized",
-        support_level: `${allResponses.length} experts participated`,
+        support_level: `${allResponses.length} of ${totalExperts} experts supported (the rest failed validation or did not respond)`,
         confidence_level: finalSynthesis.average_confidence,
         key_evidence: []
       };
@@ -425,15 +441,20 @@ Generate a JSON response with:
    * Identify dissenting views from the main consensus
    */
   private identifyDissentingViews(synthesis: RoundSynthesis, responses: ExpertResponse[]) {
-    // Find experts not in the largest cluster
-    const largestCluster = synthesis.clusters.reduce((largest, current) => 
-      current.expert_ids.length > largest.expert_ids.length ? current : largest
-    , synthesis.clusters[0] || { expert_ids: [] });
-
-    const dissentingExperts = responses.filter(response => 
+    // Find the largest cluster
+    let largestCluster: { expert_ids: string[] } = { expert_ids: [] };
+    if (synthesis.clusters && synthesis.clusters.length > 0) {
+      largestCluster = synthesis.clusters.reduce((largest, current) =>
+        current.expert_ids.length > largest.expert_ids.length ? current : largest,
+        synthesis.clusters[0]
+      );
+    }
+    // Dissenters: not in the largest cluster
+    const dissentingExperts = responses.filter(response =>
       !largestCluster.expert_ids.includes(response.agent_id)
     );
-
+    // If all are in the largest cluster, no dissenters
+    if (dissentingExperts.length === 0) return [];
     return dissentingExperts.map(expert => ({
       position: expert.position,
       expert_ids: [expert.agent_id],
@@ -466,6 +487,24 @@ Generate a JSON response with:
 
     console.log(`📄 Report saved to: ${filepath}`);
     console.log(`📊 Data saved to: ${jsonFilepath}`);
+  }
+
+  /**
+   * Save agent logs to file for frontend/debugging
+   */
+  private async saveAgentLogs(agentLogs: any[], question: string): Promise<void> {
+    if (!existsSync('output')) {
+      mkdirSync('output', { recursive: true });
+    }
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+    const sanitizedQuestion = question
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, '-')
+      .slice(0, 50);
+    const logFile = `output/agent-logs-${timestamp}-${sanitizedQuestion}.json`;
+    writeFileSync(logFile, JSON.stringify(agentLogs, null, 2), 'utf-8');
+    console.log(`📝 Agent logs saved to: ${logFile}`);
   }
 
   /**
@@ -549,32 +588,6 @@ Generate a JSON response with:
       });
     }
 
-    // Dissenting Views
-    if (report.dissenting_views.length > 0) {
-      content += `## 🔄 Dissenting Views\n\n`;
-      report.dissenting_views.forEach((dissent, index) => {
-        content += `### Dissenting Position ${index + 1}\n\n`;
-        content += `**Position:** ${dissent.position}\n\n`;
-        content += `**Reasoning:** ${dissent.reasoning}\n\n`;
-        content += `**Supporting Sources:**\n`;
-        dissent.sources.forEach(source => {
-          content += `- [${source.title}](${source.url})\n`;
-        });
-        content += `\n`;
-      });
-    }
-
-    // Round History
-    content += `## 📋 Round History\n\n`;
-    report.round_history.forEach((round) => {
-      content += `### Round ${round.round_number}\n\n`;
-      content += `- **Participation:** ${round.participation_count} experts\n`;
-      content += `- **Average Confidence:** ${round.average_confidence.toFixed(1)}/10\n`;
-      content += `- **Clusters:** ${round.clusters.length}\n`;
-      content += `- **Consensus Areas:** ${round.consensus_areas.length}\n`;
-      content += `- **Divergence Areas:** ${round.divergence_areas.length}\n\n`;
-    });
-
     content += `---\n\n`;
     content += `*This report was generated by DelphiAgent - AI-Augmented Delphi Consensus Tool*\n`;
 
@@ -622,4 +635,4 @@ Generate a JSON response with:
 }
 
 // Export for use as a library
-export default DelphiAgent; 
+export default DelphiAgent;
