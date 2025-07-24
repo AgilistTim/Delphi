@@ -1,0 +1,43 @@
+{
+  "name": "delphi-agent",
+  "version": "1.0.0",
+  "description": "AI-Augmented Delphi Consensus Tool with structured AI agents and real-time web search",
+  "main": "dist/main.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest",
+    "example": "tsx examples/basic-usage.ts",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts",
+    "health": "tsx src/cli.ts --health-check"
+  },
+  "keywords": ["ai", "delphi", "consensus", "agents", "expert-systems"],
+  "author": "Tim",
+  "license": "MIT",
+  "dependencies": {
+    "openai": "^4.73.1",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "uuid": "^11.0.3",
+    "zod": "^3.24.1",
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/uuid": "^10.0.0",
+    "@types/markdown-it": "^14.1.2",
+    "typescript": "^5.7.2",
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.8",
+    "eslint": "^9.17.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.1",
+    "@typescript-eslint/parser": "^8.18.1",
+    "prettier": "^3.4.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+} 
