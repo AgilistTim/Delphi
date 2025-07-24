@@ -9,6 +9,7 @@ import { ExpertAgent } from './agents/expert.js';
 import { ContrarianAgent } from './agents/contrarian.js';
 import { OrchestratorAgent } from './agents/orchestrator.js';
 import { ConvergenceTracker } from './utils/convergence-tracker.js';
+import { generatePersonas, PersonaSpec } from './utils/persona-generator.js';
 
 import {
   DelphiPrompt,
@@ -81,8 +82,10 @@ export class DelphiAgent {
     console.log(`📊 Configuration: ${expertCount} experts, max ${this.maxRounds} rounds\n`);
 
     try {
-      // Initialize expert agents
-      this.initializeExperts(expertCount, customExpertRoles);
+      // Generate detailed expert personas using OpenAI
+      const personas: PersonaSpec[] = await generatePersonas(this.openai, prompt.question, expertCount);
+      // Initialize expert agents with generated personas
+      this.initializeExpertsWithPersonas(personas);
       
       // Initialize contrarian agents (1-2 depending on expert count)
       const contrarianCount = Math.min(2, Math.ceil(expertCount / 3));
@@ -225,26 +228,21 @@ export class DelphiAgent {
   }
 
   /**
-   * Initialize expert agents with diverse roles
+   * Initialize expert agents with generated personas
    */
-  private initializeExperts(count: number, customRoles?: string[]): void {
-    console.log(`\n👥 Initializing ${count} expert agents`);
-    
+  private initializeExpertsWithPersonas(personas: PersonaSpec[]): void {
+    console.log(`\n👥 Initializing ${personas.length} expert agents (bespoke personas)`);
     this.experts = [];
-    const selectedRoles = customRoles || this.selectDiverseRoles(count);
-
-    selectedRoles.slice(0, count).forEach((role, index) => {
+    personas.forEach((persona, index) => {
       const config: AgentConfig = {
-        role: role,
-        expertise_areas: this.getExpertiseAreas(role),
-        perspective: this.getPerspective(role),
-        bias_instructions: this.getBiasInstructions(role)
+        role: persona.role,
+        expertise_areas: [persona.domain_expertise],
+        perspective: persona.perspective,
+        bias_instructions: persona.justification + '\n' + persona.description
       };
-
       const expert = new ExpertAgent(this.openai, this.perplexity, config);
       this.experts.push(expert);
-      
-      console.log(`   ✅ Expert ${index + 1}: ${role}`);
+      console.log(`   ✅ Expert ${index + 1}: ${persona.role}`);
     });
   }
 

@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { SearchParams, SearchResult, Citation } from '../types/index.js';
+import { sanitizeCitations } from '../utils/citation-sanitize.js';
 
 export class PerplexityTool {
   private client: AxiosInstance;
@@ -87,22 +88,7 @@ export class PerplexityTool {
       const content = data.choices?.[0]?.message?.content || '';
       
       // Extract citations from response
-      const citations: Citation[] = (data.citations || []).map((citation: any, index: number) => {
-        if (typeof citation === 'string') {
-          return {
-            title: `Source ${index + 1}`,
-            url: citation,
-            date: undefined,
-            relevance: 'High'
-          };
-        }
-        return {
-          title: citation.title || `Source ${index + 1}`,
-          url: citation.url || '',
-          date: typeof citation.date === 'string' ? citation.date : undefined,
-          relevance: typeof citation.relevance === 'string' ? citation.relevance : undefined
-        };
-      });
+      const citations: Citation[] = sanitizeCitations(data.citations);
 
       // Extract search results if available
       const searchResults: SearchResult[] = (data.search_results || []).map((result: any) => ({
