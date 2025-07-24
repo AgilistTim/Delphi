@@ -2,6 +2,44 @@
 
 AI-Augmented Delphi Consensus Tool that simulates rigorous, multi-round expert consensus using structured AI agents, real-time web search, and anonymized iteration.
 
+## 🚦 Available Commands
+
+| Command                | Description                                                      |
+|------------------------|------------------------------------------------------------------|
+| `npm run dev`          | Start DelphiAgent in CLI mode (ask a question, run a session)     |
+| `npm run build`        | Compile the TypeScript project                                   |
+| `npm start`            | Run the compiled CLI (after build)                               |
+| `npm run example`      | Run example usage scripts (see `examples/`)                      |
+| `npm run test`         | Run the test suite with Vitest                                   |
+| `npm run lint`         | Lint the codebase with ESLint                                    |
+| `npm run format`       | Format code with Prettier                                        |
+| `npm run health`       | Run a health check for OpenAI and Perplexity API connectivity    |
+
+### CLI Options
+
+You can customize your Delphi session with the following flags:
+
+| Option/Flag                | Description                                      |
+|----------------------------|--------------------------------------------------|
+| `-q`, `--question`         | The question to analyze (required unless interactive) |
+| `-c`, `--context`          | Additional context for the question              |
+| `-e`, `--experts`          | Number of expert agents (default: 5, max: 10)    |
+| `-r`, `--rounds`           | Maximum rounds (default: 3, max: 5)              |
+| `-i`, `--interactive`      | Run in interactive mode                         |
+| `-h`, `--help`             | Show help message                               |
+| `--health-check`           | Check API connectivity                          |
+
+**Examples:**
+
+```bash
+npm run dev "Should AI development be regulated?"
+npm run dev --question "Climate change policy priorities" --experts 7 --rounds 3
+npm run dev --interactive
+npm run health
+```
+
+---
+
 ## 🎯 Overview
 
 DelphiAgent replaces human experts with diverse AI personas, uses contrarian agents for challenge, and integrates search tools to ground reasoning in real, verifiable data. It produces transparent consensus (or valuable dissent) on complex questions through iterative refinement.
