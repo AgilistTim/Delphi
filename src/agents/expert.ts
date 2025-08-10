@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { safeChatCompletion } from '../utils/openai-helpers.js';
 import { PerplexityTool } from '../tools/perplexity.js';
 import { ExpertResponse, ExpertResponseSchema, AgentConfig, DelphiPrompt } from '../types/index.js';
 import { readFileSync } from 'fs';
@@ -69,7 +70,7 @@ export class ExpertAgent {
       userMessage += `Please provide your expert analysis as a ${this.config.role} with expertise in ${this.config.expertise_areas.join(', ')}.`;
 
       // 1. Get background/context from OpenAI (no tool calls)
-      const backgroundCompletion = await this.openai.chat.completions.create({
+      const backgroundCompletion = await safeChatCompletion(this.openai, {
         model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
@@ -106,7 +107,7 @@ export class ExpertAgent {
         }
       };
 
-      const completion = await this.openai.chat.completions.create({
+      const completion = await safeChatCompletion(this.openai, {
         model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
@@ -167,7 +168,7 @@ export class ExpertAgent {
           }
         }
         // Get the final response after tool calls
-        const followUpCompletion = await this.openai.chat.completions.create({
+        const followUpCompletion = await safeChatCompletion(this.openai, {
           model: 'gpt-4o',
           messages: [
             { role: 'system', content: systemPrompt },
@@ -232,4 +233,4 @@ export class ExpertAgent {
   getRole(): string {
     return this.config.role;
   }
-} 
+}

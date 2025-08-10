@@ -1,10 +1,14 @@
 import { listReports } from "../lib/reports";
+import RunConsole from "./components/RunConsole";
 
 export default async function DashboardPage() {
   const reports = listReports();
 
   return (
     <section>
+      <div style={{ marginBottom: 16 }}>
+        <RunConsole />
+      </div>
       <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>Run History</h1>
 
       {reports.length === 0 ? (

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { safeChatCompletion } from './openai-helpers.js';
 
 export interface PersonaSpec {
   name: string;
@@ -27,7 +28,7 @@ For each persona, provide:
 - A detailed description (2–3 paragraphs) of their professional background, worldview, and approach to the Delphi topic
 Return as a JSON array with keys: name, role, domain_expertise, perspective, work_background, education_history, justification, description.`;
 
-  const completion = await openai.chat.completions.create({
+  const completion = await safeChatCompletion(openai, {
     model: 'gpt-4o',
     messages: [
       { role: 'system', content: 'You are an expert persona generator for Delphi panels.' },
@@ -55,4 +56,4 @@ Return as a JSON array with keys: name, role, domain_expertise, perspective, wor
     throw new Error('No personas generated');
   }
   return personas;
-} 
+}

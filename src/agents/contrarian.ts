@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { safeChatCompletion } from '../utils/openai-helpers.js';
 import { PerplexityTool } from '../tools/perplexity.js';
 import { ContrarianResponse, ContrarianResponseSchema, RoundSynthesis } from '../types/index.js';
 import { readFileSync } from 'fs';
@@ -49,7 +50,7 @@ export class ContrarianAgent {
       const userMessage = `Challenge the emerging consensus in this synthesis. Focus on the dominant viewpoints and identify their weaknesses, blind spots, and alternative interpretations. Be constructively critical and provide counter-evidence where possible.`;
 
       // 1. Generate critique/alternative using OpenAI (no tool calls)
-      const critiqueCompletion = await this.openai.chat.completions.create({
+      const critiqueCompletion = await safeChatCompletion(this.openai, {
         model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
@@ -86,7 +87,7 @@ export class ContrarianAgent {
         }
       };
 
-      const completion = await this.openai.chat.completions.create({
+      const completion = await safeChatCompletion(this.openai, {
         model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
@@ -137,7 +138,7 @@ export class ContrarianAgent {
           }
         }
         // Get the final contrarian response after tool calls
-        const followUpCompletion = await this.openai.chat.completions.create({
+        const followUpCompletion = await safeChatCompletion(this.openai, {
           model: 'gpt-4o',
           messages: [
             { role: 'system', content: systemPrompt },
@@ -237,4 +238,4 @@ export class ContrarianAgent {
   getId(): string {
     return this.agentId;
   }
-} 
+}

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { safeChatCompletion } from '../utils/openai-helpers.js';
 import { 
   ExpertResponse, 
   ContrarianResponse, 
@@ -35,7 +36,7 @@ export class OrchestratorAgent {
         contrarianResponses
       );
 
-      const completion = await this.openai.chat.completions.create({
+      const completion = await safeChatCompletion(this.openai, {
         model: 'gpt-4o',
         messages: [
           {
@@ -282,4 +283,4 @@ Focus on identifying meaningful patterns and groupings. Be objective and accurat
 
     return formatted;
   }
-} 
+}

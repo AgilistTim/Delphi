@@ -5,6 +5,10 @@
   "main": "dist/main.js",
   "type": "module",
   "scripts": {
+    "app": "npm run app:dev",
+    "app:dev": "cd apps/dashboard && npm install && npm run dev",
+    "app:build": "cd apps/dashboard && npm install && npm run build",
+    "app:start": "cd apps/dashboard && npm run start",
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
@@ -40,4 +44,4 @@
   "engines": {
     "node": ">=18.0.0"
   }
-} 
+}
