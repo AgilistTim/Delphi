@@ -41,13 +41,13 @@ It is ideal for:
 ### Installation
 ```bash
 # Clone and setup
-git clone <your-repo>
+git clone https://github.com/AgilistTim/Delphi.git
 cd Delphi
 npm install
 
 # Configure environment
-cp .env.example .env  # (create this if missing)
-# Edit .env with your API keys
+cp .env.example .env
+# Edit .env with your API keys (see below)
 ```
 
 ### Environment Variables
@@ -96,6 +96,29 @@ You will be prompted for the question, context, number of experts, and rounds.
 | `npm run health`       | Run a health check for OpenAI and Perplexity API connectivity    |
 
 ---
+
+## 📊 Web Dashboard (optional)
+
+The dashboard provides a UI to browse generated runs and artifacts (Markdown and JSON) from the `output/` directory at the repo root.
+
+### Run locally
+```bash
+# From repo root
+cd apps/dashboard
+npm install            # once
+npm run dev            # starts on http://localhost:3001
+```
+
+### Build and start (production)
+```bash
+cd apps/dashboard
+npm run build
+npm start              # http://localhost:3001
+```
+
+Notes:
+- The dashboard reads artifacts from `../../output`. First generate some runs with the CLI so the dashboard has reports to display.
+- No extra environment variables are required for the dashboard.
 
 ## 🏗️ Architecture
 
@@ -159,4 +182,4 @@ MIT License - see LICENSE file for details.
 
 ## 🔗 API References
 - [OpenAI API Documentation](https://platform.openai.com/docs)
-- [Perplexity API Documentation](https://docs.perplexity.ai) 
+- [Perplexity API Documentation](https://docs.perplexity.ai)
