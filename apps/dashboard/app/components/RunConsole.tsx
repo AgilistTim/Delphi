@@ -1,6 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
+import { Badge } from "../../components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
 
 type RunStatus = "idle" | "running" | "completed" | "error";
 
@@ -15,7 +26,7 @@ export default function RunConsole() {
   const [logs, setLogs] = useState<string>("");
 
   const esRef = useRef<EventSource | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const logRef = useRef<HTMLDivElement | null>(null);
 
   const canStart = useMemo(() => {
     return status !== "running" && question.trim().length > 0;
@@ -26,8 +37,8 @@ export default function RunConsole() {
   }, []);
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.scrollTop = textareaRef.current.scrollHeight;
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [logs]);
 
@@ -57,8 +68,8 @@ export default function RunConsole() {
           question: question.trim(),
           context: context.trim() || undefined,
           experts: Number(experts) || 5,
-          rounds: Number(rounds) || 3
-        })
+          rounds: Number(rounds) || 3,
+        }),
       });
 
       if (!res.ok) {
@@ -130,150 +141,109 @@ export default function RunConsole() {
   }, [cleanupStream, runId]);
 
   const disabled = status === "running";
+  const statusVariant =
+    status === "completed"
+      ? "success"
+      : status === "error"
+      ? "destructive"
+      : status === "running"
+      ? "warning"
+      : "secondary";
 
   return (
-    <section style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>New Run</h2>
-
-      <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
-        <div style={{ display: "grid", gap: 6 }}>
-          <label style={{ fontSize: 14, fontWeight: 600 }}>Question</label>
-          <input
-            type="text"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="What question should the Delphi process analyze?"
-            style={{
-              border: "1px solid #e5e7eb",
-              borderRadius: 6,
-              padding: "8px 10px",
-              fontSize: 14
-            }}
-            disabled={disabled}
-          />
+    <Card className="mb-4">
+      <CardHeader className="pb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>New Run</CardTitle>
+            <CardDescription>Configure a run and stream live logs.</CardDescription>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">Status</span>
+            <Badge variant={statusVariant as any}>{status}</Badge>
+          </div>
         </div>
+      </CardHeader>
 
-        <div style={{ display: "grid", gap: 6 }}>
-          <label style={{ fontSize: 14, fontWeight: 600 }}>Context (optional)</label>
-          <textarea
-            value={context}
-            onChange={(e) => setContext(e.target.value)}
-            placeholder="Additional context, constraints, or background"
-            rows={3}
-            style={{
-              border: "1px solid #e5e7eb",
-              borderRadius: 6,
-              padding: "8px 10px",
-              fontSize: 14,
-              resize: "vertical"
-            }}
-            disabled={disabled}
-          />
-        </div>
-
-        <div style={{ display: "flex", gap: 12 }}>
-          <div style={{ display: "grid", gap: 6, maxWidth: 160 }}>
-            <label style={{ fontSize: 14, fontWeight: 600 }}>Experts</label>
-            <input
-              type="number"
-              min={3}
-              max={10}
-              value={experts}
-              onChange={(e) => setExperts(Number(e.target.value))}
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: 6,
-                padding: "8px 10px",
-                fontSize: 14
-              }}
+      <CardContent className="space-y-5">
+        <div className="grid gap-4">
+          <div className="grid gap-2">
+            <label className="text-sm font-medium">Question</label>
+            <Input
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="What question should the Delphi process analyze?"
               disabled={disabled}
             />
           </div>
-          <div style={{ display: "grid", gap: 6, maxWidth: 160 }}>
-            <label style={{ fontSize: 14, fontWeight: 600 }}>Max Rounds</label>
-            <input
-              type="number"
-              min={1}
-              max={5}
-              value={rounds}
-              onChange={(e) => setRounds(Number(e.target.value))}
-              style={{
-                border: "1px solid #e5e7eb",
-                borderRadius: 6,
-                padding: "8px 10px",
-                fontSize: 14
-              }}
+
+          <div className="grid gap-2">
+            <label className="text-sm font-medium">Context (optional)</label>
+            <Textarea
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              placeholder="Additional context, constraints, or background"
+              rows={3}
               disabled={disabled}
             />
           </div>
+
+          <div className="flex flex-wrap gap-4">
+            <div className="grid gap-2 max-w-[180px]">
+              <label className="text-sm font-medium">Experts</label>
+              <Input
+                type="number"
+                min={3}
+                max={10}
+                value={experts}
+                onChange={(e) => setExperts(Number(e.target.value))}
+                disabled={disabled}
+              />
+            </div>
+            <div className="grid gap-2 max-w-[180px]">
+              <label className="text-sm font-medium">Max Rounds</label>
+              <Input
+                type="number"
+                min={1}
+                max={5}
+                value={rounds}
+                onChange={(e) => setRounds(Number(e.target.value))}
+                disabled={disabled}
+              />
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
-        <button
-          onClick={startRun}
-          disabled={!canStart}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 6,
-            border: "1px solid #e5e7eb",
-            background: canStart ? "#111827" : "#9ca3af",
-            color: "white",
-            fontSize: 14,
-            cursor: canStart ? "pointer" : "not-allowed"
-          }}
-        >
-          {status === "running" ? "Running..." : "Start Run"}
-        </button>
-        <button
-          onClick={stopRun}
-          disabled={status !== "running"}
-          style={{
-            padding: "8px 12px",
-            borderRadius: 6,
-            border: "1px solid #e5e7eb",
-            background: status === "running" ? "#ef4444" : "#f3f4f6",
-            color: status === "running" ? "white" : "#6b7280",
-            fontSize: 14,
-            cursor: status === "running" ? "pointer" : "not-allowed"
-          }}
-        >
-          Stop
-        </button>
-        <span style={{ fontSize: 13, color: "#6b7280" }}>
-          Status:{" "}
-          <span style={{ fontWeight: 600, color: status === "completed" ? "#059669" : status === "error" ? "#dc2626" : "#111827" }}>
-            {status}
-          </span>
-        </span>
-      </div>
+        <div className="flex items-center gap-2">
+          <Button onClick={startRun} disabled={!canStart} className="min-w-28">
+            {status === "running" ? "Running..." : "Start Run"}
+          </Button>
+          <Button
+            onClick={stopRun}
+            disabled={status !== "running"}
+            variant="destructive"
+          >
+            Stop
+          </Button>
+        </div>
 
-      <div style={{ display: "grid", gap: 6 }}>
-        <label style={{ fontSize: 14, fontWeight: 700 }}>Live Log</label>
-        <textarea
-          ref={textareaRef}
-          readOnly
-          value={logs}
-          rows={14}
-          style={{
-            width: "100%",
-            border: "1px solid #e5e7eb",
-            borderRadius: 6,
-            padding: 10,
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace",
-            fontSize: 12,
-            background: "#0b1020",
-            color: "#e5e7eb",
-            whiteSpace: "pre",
-            overflow: "auto"
-          }}
-          placeholder="Logs will appear here after you start a run..."
-        />
-      </div>
+        <div className="grid gap-2">
+          <label className="text-sm font-semibold">Live Log</label>
+          <div
+            ref={logRef}
+            className="w-full h-72 overflow-auto rounded-md border bg-[#0b1020] p-3 text-slate-200"
+          >
+            <pre className="whitespace-pre font-mono text-xs leading-relaxed">
+              {logs || "Logs will appear here after you start a run..."}
+            </pre>
+          </div>
+        </div>
 
-      <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
-        Tip: After completion, click Refresh in your browser to see the new run in the history table below.
-      </div>
-    </section>
+        <p className="text-xs text-muted-foreground">
+          Tip: After completion, click Refresh in your browser to see the new run in the history table below.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
