@@ -82,7 +82,7 @@ export default function RunPage({ params }: RunPageProps) {
   useEffect(() => {
     async function loadReport() {
       try {
-        const res = await fetch(`/api/artifacts/${encodeURIComponent(params.slug)}/json`);
+        const res = await fetch(new URL(`/api/artifacts/${encodeURIComponent(params.slug)}/json`, window.location.origin).toString());
         if (!res.ok) {
           throw new Error("Report not found");
         }

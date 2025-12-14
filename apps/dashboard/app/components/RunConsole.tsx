@@ -61,7 +61,7 @@ export default function RunConsole() {
     setRunId(null);
 
     try {
-      const res = await fetch("/api/run", {
+      const res = await fetch(new URL("/api/run", window.location.origin).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -83,7 +83,7 @@ export default function RunConsole() {
       setRunId(data.runId);
 
       // Open SSE
-      const url = `/api/run/stream?runId=${encodeURIComponent(data.runId)}`;
+      const url = new URL(`/api/run/stream?runId=${encodeURIComponent(data.runId)}`, window.location.origin).toString();
       const es = new EventSource(url);
       esRef.current = es;
 
@@ -131,7 +131,7 @@ export default function RunConsole() {
   const stopRun = useCallback(async () => {
     if (!runId) return;
     try {
-      await fetch(`/api/run?runId=${encodeURIComponent(runId)}`, { method: "DELETE" });
+      await fetch(new URL(`/api/run?runId=${encodeURIComponent(runId)}`, window.location.origin).toString(), { method: "DELETE" });
     } catch {
       // ignore
     } finally {
