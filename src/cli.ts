@@ -23,9 +23,6 @@ function parseArgs(): CLIArgs {
   // Find the script index (cli.ts or cli.js)
   const scriptIndex = process.argv.findIndex(arg => arg.endsWith('cli.ts') || arg.endsWith('cli.js'));
   const args = process.argv.slice(scriptIndex + 1);
-  console.log('[DEBUG] process.argv:', process.argv);
-  console.log('[DEBUG] scriptIndex:', scriptIndex);
-  console.log('[DEBUG] args to parse:', args);
   const parsed: CLIArgs = {};
 
   for (let i = 0; i < args.length; i++) {
@@ -218,7 +215,6 @@ async function runHealthCheck(): Promise<void> {
 // Main CLI execution
 async function main(): Promise<void> {
   const args = parseArgs();
-  console.log('[DEBUG] parsed CLI args:', args);
 
   // Handle help
   if (args.help) {
@@ -293,4 +289,4 @@ main().catch((error) => {
   process.exit(1);
 });
 
-export { main, runDelphiProcess, runHealthCheck }; 
+export { main, runDelphiProcess, runHealthCheck };    

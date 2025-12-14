@@ -32,13 +32,6 @@ async function basicExample() {
 
     // Configure the process
     const expertCount = 5;
-    const customExpertRoles = [
-      'Technology Ethics Specialist',
-      'Legal Expert',
-      'Industry Analyst',
-      'Policy Researcher',
-      'Academic Researcher'
-    ];
 
     // Set maximum rounds
     delphi.setMaxRounds(3);
@@ -46,10 +39,10 @@ async function basicExample() {
     console.log('🚀 Starting Delphi process...\n');
 
     // Run the Delphi process
+    // Note: Expert personas are now generated dynamically based on the question
     const report = await delphi.runDelphiProcess(
       prompt,
-      expertCount,
-      customExpertRoles
+      expertCount
     );
 
     // Display summary results
@@ -196,4 +189,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch(console.error);
 }
 
-export { basicExample, advancedExample }; 
+export { basicExample, advancedExample };  
