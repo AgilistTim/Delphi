@@ -97,9 +97,16 @@ You will be prompted for the question, context, number of experts, and rounds.
 
 ---
 
-## 📊 Web Dashboard (optional)
+## 📊 Web Dashboard
 
-The dashboard provides a UI to browse generated runs and artifacts (Markdown and JSON) from the `output/` directory at the repo root.
+The dashboard provides a modern UI to run Delphi analyses and explore results with animated expert discussions.
+
+### Features
+- **Start New Analyses**: Configure and run Delphi processes directly from the browser with live streaming output
+- **Animated Expert Discussion**: Watch experts present their positions with avatar animations, speech bubbles, and confidence meters
+- **Round Evolution Timeline**: Visualize how consensus develops across rounds
+- **Evidence Browser**: Explore all citations and sources used by experts and contrarians
+- **Run History**: Browse all previous analyses with termination status, confidence levels, and timestamps
 
 ### Run locally
 ```bash
@@ -116,21 +123,30 @@ npm run build
 npm start              # http://localhost:3001
 ```
 
-Notes:
-- The dashboard reads artifacts from `../../output`. First generate some runs with the CLI so the dashboard has reports to display.
-- No extra environment variables are required for the dashboard.
+### Notes
+- The dashboard can start new Delphi runs (requires API keys configured in root `.env`)
+- Historical runs are read from `../../output` directory
+- Clear the `.next` cache (`rm -rf .next`) if you encounter stale UI issues after updates
 
 ## 🏗️ Architecture
 
 ```
-src/
-├── agents/          # Expert, Contrarian, Orchestrator agents
-├── prompts/         # System prompts for each agent type
-├── tools/           # Perplexity API integration
-├── utils/           # Persona generation, convergence tracking, helpers
-├── output/          # Generated reports and agent logs
-├── main.ts          # Delphi process orchestration
-├── cli.ts           # Command-line interface
+Delphi/
+├── src/                          # Core Delphi engine
+│   ├── agents/                   # Expert, Contrarian, Orchestrator agents
+│   ├── prompts/                  # System prompts for each agent type
+│   ├── tools/                    # Perplexity API integration
+│   ├── utils/                    # Persona generation, convergence tracking
+│   ├── main.ts                   # Delphi process orchestration
+│   └── cli.ts                    # Command-line interface
+├── apps/dashboard/               # Next.js web dashboard
+│   ├── app/                      # App router pages and API routes
+│   │   ├── api/run/              # SSE streaming for live run output
+│   │   └── runs/[slug]/          # Individual report viewer
+│   ├── components/               # UI components (ExpertDiscussion, RoundEvolution)
+│   └── lib/                      # Report file system utilities
+├── output/                       # Generated reports and agent logs
+└── examples/                     # Usage examples
 ```
 
 ---
