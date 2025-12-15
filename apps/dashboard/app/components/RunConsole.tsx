@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -16,6 +17,7 @@ import {
 type RunStatus = "idle" | "running" | "completed" | "error";
 
 export default function RunConsole() {
+  const router = useRouter();
   const [question, setQuestion] = useState("");
   const [context, setContext] = useState("");
   const [experts, setExperts] = useState<number>(5);
@@ -24,6 +26,7 @@ export default function RunConsole() {
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<RunStatus>("idle");
   const [logs, setLogs] = useState<string>("");
+  const [reportSlug, setReportSlug] = useState<string | null>(null);
 
   const esRef = useRef<EventSource | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
@@ -34,6 +37,12 @@ export default function RunConsole() {
 
   const appendLog = useCallback((chunk: string) => {
     setLogs((prev) => (prev ? prev + "\n" + chunk : chunk));
+    
+    // Parse report slug from log output (e.g., "Report saved to: output/delphi-report-...")
+    const slugMatch = chunk.match(/Report saved to:.*?(delphi-report-[^\s.]+)/);
+    if (slugMatch) {
+      setReportSlug(slugMatch[1]);
+    }
   }, []);
 
   useEffect(() => {
@@ -41,6 +50,17 @@ export default function RunConsole() {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [logs]);
+
+  // Auto-redirect to report when run completes
+  useEffect(() => {
+    if (status === "completed" && reportSlug) {
+      // Small delay to let user see the completion message
+      const timer = setTimeout(() => {
+        router.push(`/runs/${encodeURIComponent(reportSlug)}`);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [status, reportSlug, router]);
 
   const cleanupStream = useCallback(() => {
     if (esRef.current) {
@@ -307,7 +327,9 @@ export default function RunConsole() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="text-sm text-green-700">
-              Analysis complete! Refresh the page to see the new run in the history below.
+              {reportSlug 
+                ? "Analysis complete! Redirecting to report..." 
+                : "Analysis complete! Refresh the page to see the new run in the history below."}
             </span>
           </div>
         )}
