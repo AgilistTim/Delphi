@@ -83,7 +83,7 @@ export default function RunConsole() {
       setRunId(data.runId);
 
       // Open SSE
-      const url = new URL(`/api/run/stream?runId=${encodeURIComponent(data.runId)}`, window.location.origin).toString();
+      const url = new URL(`/api/run?runId=${encodeURIComponent(data.runId)}`, window.location.origin).toString();
       const es = new EventSource(url);
       esRef.current = es;
 
