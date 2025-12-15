@@ -156,13 +156,70 @@ export class DelphiAgent {
   }
 
   /**
+   * Group personas by expertise category for targeted searches
+   */
+  private groupPersonasByExpertise(personas: PersonaSpec[]): Map<string, PersonaSpec[]> {
+    const groups = new Map<string, PersonaSpec[]>();
+    
+    for (const persona of personas) {
+      const category = this.categorizeExpertise(persona);
+      if (!groups.has(category)) {
+        groups.set(category, []);
+      }
+      groups.get(category)!.push(persona);
+    }
+    
+    return groups;
+  }
+
+  /**
+   * Categorize a persona's expertise into a search category
+   */
+  private categorizeExpertise(persona: PersonaSpec): string {
+    const expertise = (persona.domain_expertise || '').toLowerCase();
+    const role = (persona.role || '').toLowerCase();
+    const orgType = (persona.organization_type || '').toLowerCase();
+    const combined = `${expertise} ${role} ${orgType}`;
+    
+    if (combined.match(/policy|government|regulation|legal|law|compliance|public/)) {
+      return 'policy_regulatory';
+    }
+    if (combined.match(/academic|research|professor|university|science|phd/)) {
+      return 'academic_research';
+    }
+    if (combined.match(/business|industry|corporate|cto|ceo|executive|startup|enterprise/)) {
+      return 'industry_business';
+    }
+    if (combined.match(/ethics|philosophy|social|humanitarian|ngo|non-profit/)) {
+      return 'ethics_social';
+    }
+    return 'general';
+  }
+
+  /**
+   * Generate a persona-specific search query based on expertise category
+   */
+  private generateCategorySearchQuery(category: string, baseQuestion: string): string {
+    const prefixes: Record<string, string> = {
+      'policy_regulatory': 'government policy regulatory framework legal implications',
+      'academic_research': 'academic research scientific studies peer-reviewed',
+      'industry_business': 'industry trends business implementation enterprise adoption',
+      'ethics_social': 'ethical considerations social impact humanitarian perspective',
+      'general': ''
+    };
+    
+    const prefix = prefixes[category] || '';
+    return prefix ? `${prefix}: ${baseQuestion}` : baseQuestion;
+  }
+
+  /**
    * Execute a single round of the Delphi process, logging failed expert validations
    */
   private async executeRoundWithValidation(
     roundNumber: number,
     prompt: DelphiPrompt,
     previousSynthesis: RoundSynthesis | undefined,
-    _personas: PersonaSpec[],
+    personas: PersonaSpec[],
     agentLogs: any[]
   ): Promise<{
     expertResponses: ExpertResponse[];
@@ -170,17 +227,76 @@ export class DelphiAgent {
     contrarianResponses: ContrarianResponse[];
     failedExperts: { role: string; error: string }[];
   }> {
-    // Phase 0: Perplexity background research (batch)
-    console.log(`\n🔎 Phase 0: Perplexity background research (shared)`);
-    let perplexityBackground: { content: string; citations: any[]; searchResults: any[] } = { content: '', citations: [], searchResults: [] };
+    // Phase 0: Perplexity background research (persona-targeted batch)
+    console.log(`\n🔎 Phase 0: Perplexity background research (persona-targeted)`);
+    
+    // Group personas by expertise category
+    const expertiseGroups = this.groupPersonasByExpertise(personas);
+    const categoryResearch: Map<string, { content: string; citations: any[]; searchResults: any[] }> = new Map();
+    
+    // Shared baseline research
+    let sharedBaseline: { content: string; citations: any[]; searchResults: any[] } = { content: '', citations: [], searchResults: [] };
     try {
-      perplexityBackground = await this.perplexity.search({
+      console.log(`   [1/${expertiseGroups.size + 1}] Baseline search...`);
+      sharedBaseline = await this.perplexity.search({
         query: prompt.question,
         searchContextSize: 'low'
       });
-      console.log(`   ✅ Perplexity background research complete (shared with all experts)`);
+      console.log(`   ✅ Baseline research complete`);
     } catch (error) {
-      console.warn('   ⚠️  Perplexity background research failed:', error);
+      console.warn('   ⚠️  Baseline research failed:', error);
+    }
+    
+    // Sequential persona-targeted searches (with delays to avoid rate limiting)
+    let searchIndex = 2;
+    for (const [category, _groupPersonas] of expertiseGroups) {
+      if (category === 'general') continue; // Skip general category, use baseline
+      
+      try {
+        console.log(`   [${searchIndex}/${expertiseGroups.size + 1}] ${category} search...`);
+        
+        // Add delay between searches to avoid rate limiting (2 seconds)
+        if (searchIndex > 2) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+        const categoryQuery = this.generateCategorySearchQuery(category, prompt.question);
+        const result = await this.perplexity.search({
+          query: categoryQuery,
+          searchContextSize: 'low'
+        });
+        categoryResearch.set(category, result);
+        console.log(`   ✅ ${category} research complete`);
+      } catch (error) {
+        console.warn(`   ⚠️  ${category} research failed:`, error);
+        // Fall back to baseline for this category
+        categoryResearch.set(category, sharedBaseline);
+      }
+      searchIndex++;
+    }
+    
+    console.log(`   ✅ All persona-targeted research complete (${categoryResearch.size + 1} searches)`);
+    
+    // Create a mapping from persona to their tailored research
+    const personaResearchMap = new Map<string, { content: string; citations: any[] }>();
+    for (const persona of personas) {
+      const category = this.categorizeExpertise(persona);
+      const categoryData = categoryResearch.get(category) || sharedBaseline;
+      
+      // Combine baseline + category-specific research
+      const combinedContent = [
+        `Shared baseline research:\n${sharedBaseline.content}`,
+        category !== 'general' && categoryData !== sharedBaseline 
+          ? `\n\n${category.replace('_', ' ')} perspective research:\n${categoryData.content}`
+          : ''
+      ].filter(Boolean).join('');
+      
+      const combinedCitations = [
+        ...sharedBaseline.citations,
+        ...(categoryData !== sharedBaseline ? categoryData.citations : [])
+      ];
+      
+      personaResearchMap.set(persona.role, { content: combinedContent, citations: combinedCitations });
     }
 
     // Phase 1: Expert responses
@@ -195,19 +311,23 @@ export class DelphiAgent {
     const expertPromises = this.experts.map(async (expert, index) => {
       try {
         console.log(`   [${index + 1}/${this.experts.length}] ${expert.getRole()} responding...`);
-        // Pass Perplexity background as part of context
+        
+        // Get persona-specific research for this expert
+        const expertResearch = personaResearchMap.get(expert.getRole()) || { content: sharedBaseline.content, citations: sharedBaseline.citations };
+        
+        // Pass persona-targeted Perplexity research as part of context
         const expertPrompt = {
           ...prompt,
           context: [
             prompt.context || '',
-            `\n---\nPerplexity background research (shared):\n${perplexityBackground.content}\nCitations: ${perplexityBackground.citations.map(c => `${c.title}: ${c.url}`).join(' | ')}`,
+            `\n---\nPerplexity background research (tailored to your expertise):\n${expertResearch.content}\nCitations: ${expertResearch.citations.map((c: any) => `${c.title}: ${c.url}`).join(' | ')}`,
             synthesisContext || ''
           ].filter(Boolean).join('\n\n')
         };
-        // Adjust expert prompt to encourage use of shared research
+        // Adjust expert prompt to encourage use of tailored research
         (expert as any).promptTemplate = (expert as any).promptTemplate.replace(
           'Please provide your expert analysis as a',
-          'Please use the shared background research and citations provided below. Only request additional web/academic search if absolutely necessary for a unique point. Provide your expert analysis as a'
+          'Please use the background research and citations provided below, which have been tailored to your area of expertise. Provide your expert analysis as a'
         );
         // Log request
         const logEntry: any = {
