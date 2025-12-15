@@ -1,20 +1,10 @@
 import { NextResponse } from 'next/server';
 import path from 'path';
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
+import { getRunRecord, setRunRecord, type RunRecord } from './store';
 
-type RunStatus = 'running' | 'completed' | 'error';
-
-type RunRecord = {
-  id: string;
-  proc: ChildProcessWithoutNullStreams;
-  emitter: EventEmitter;
-  startedAt: number;
-  status: RunStatus;
-};
-
-const runs = new Map<string, RunRecord>();
 export const runtime = 'nodejs';
 
 /**
@@ -62,22 +52,19 @@ export async function POST(req: Request) {
       const text = chunk.toString();
       emitter.emit('data', text);
     });
+    const record: RunRecord = { id, proc, emitter, startedAt: Date.now(), status: 'running' };
+    setRunRecord(id, record);
+
     proc.on('close', (code) => {
       emitter.emit('data', `\n[process exited with code ${code}]\n`);
       emitter.emit('end');
-      const rec = runs.get(id);
-      if (rec) {
-        rec.status = code === 0 ? 'completed' : 'error';
-      }
+      record.status = code === 0 ? 'completed' : 'error';
     });
     proc.on('error', (err) => {
       emitter.emit('data', `\n[process error: ${err instanceof Error ? err.message : String(err)}]\n`);
       emitter.emit('end');
-      const rec = runs.get(id);
-      if (rec) rec.status = 'error';
+      record.status = 'error';
     });
-
-    runs.set(id, { id, proc, emitter, startedAt: Date.now(), status: 'running' });
 
     return NextResponse.json({ runId: id });
   } catch (err) {
@@ -97,7 +84,7 @@ export async function DELETE(req: Request) {
     if (!id) {
       return NextResponse.json({ error: 'Missing runId' }, { status: 400 });
     }
-    const rec = runs.get(id);
+    const rec = getRunRecord(id);
     if (!rec) {
       return NextResponse.json({ error: 'Run not found' }, { status: 404 });
     }
@@ -107,9 +94,4 @@ export async function DELETE(req: Request) {
     console.error('Error stopping run:', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
-}
-
-// Helper used by the SSE stream route
-export function getRunRecord(runId: string): RunRecord | undefined {
-  return runs.get(runId);
 }
