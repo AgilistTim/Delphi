@@ -132,11 +132,11 @@ export class DelphiAgent {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      // Generate final report
+      // Generate final report (include personas for PDF export)
       const report = await this.generateFinalReportWithSupport(
         prompt,
         roundResults,
-        personas.length
+        personas
       );
       
       // Save report to file
@@ -463,10 +463,11 @@ export class DelphiAgent {
       contrarianResponses: ContrarianResponse[];
       failedExperts?: { role: string; error: string }[];
     }>,
-    totalExperts: number
+    personas: PersonaSpec[]
   ) {
     console.log(`\n📝 Generating final report`);
 
+    const totalExperts = personas.length;
     const finalRound = roundResults[roundResults.length - 1];
     const allExpertResponses = roundResults.flatMap(r => r.expertResponses);
     const allContrarianResponses = roundResults.flatMap(r => r.contrarianResponses);
@@ -483,10 +484,33 @@ export class DelphiAgent {
     // Identify dissenting views
     const dissentingViews = this.identifyDissentingViews(finalRound.synthesis, allExpertResponses);
 
+    // Map personas to expert_personas format with agent_id linkage
+    const expertPersonas = personas.map((persona, index) => ({
+      name: persona.name,
+      role: persona.role,
+      domain_expertise: persona.domain_expertise,
+      perspective: persona.perspective,
+      work_background: persona.work_background,
+      education_history: persona.education_history,
+      justification: persona.justification,
+      description: persona.description,
+      age: persona.age,
+      gender: persona.gender,
+      nationality: persona.nationality,
+      location: persona.location,
+      years_experience: persona.years_experience,
+      organization_type: persona.organization_type,
+      notable_achievements: persona.notable_achievements,
+      potential_biases: persona.potential_biases,
+      communication_style: persona.communication_style,
+      agent_id: this.experts[index]?.getId()
+    }));
+
     const report: DelphiReport = {
       prompt,
       consensus_summary: consensusSummary,
       expert_positions: finalRound.expertResponses,
+      expert_personas: expertPersonas,
       contrarian_observations: allContrarianResponses,
       dissenting_views: dissentingViews,
       convergence_analysis: convergenceMetrics,
