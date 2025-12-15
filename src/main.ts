@@ -195,13 +195,6 @@ export class DelphiAgent {
     const expertPromises = this.experts.map(async (expert, index) => {
       try {
         console.log(`   [${index + 1}/${this.experts.length}] ${expert.getRole()} responding...`);
-        // Restore original Perplexity methods if previously patched
-        if ((expert as any)._originalPerplexitySearch) {
-          expert['perplexity'].search = (expert as any)._originalPerplexitySearch;
-          expert['perplexity'].searchAcademic = (expert as any)._originalPerplexitySearchAcademic;
-          expert['perplexity'].searchRecent = (expert as any)._originalPerplexitySearchRecent;
-          expert['perplexity'].searchDomains = (expert as any)._originalPerplexitySearchDomains;
-        }
         // Pass Perplexity background as part of context
         const expertPrompt = {
           ...prompt,

@@ -13,18 +13,16 @@ const __dirname = dirname(__filename);
 
 export class ExpertAgent {
   private openai: OpenAI;
-  private perplexity: PerplexityTool;
   private config: AgentConfig;
   private agentId: string;
   private promptTemplate: string;
 
   constructor(
     openaiClient: OpenAI,
-    perplexityTool: PerplexityTool,
+    _perplexityTool: PerplexityTool, // Kept for backward compatibility; per-expert searches disabled
     config: AgentConfig
   ) {
     this.openai = openaiClient;
-    this.perplexity = perplexityTool;
     this.config = config;
     this.agentId = uuidv4();
     
@@ -81,31 +79,11 @@ export class ExpertAgent {
       });
       const backgroundContext = backgroundCompletion.choices[0]?.message?.content || '';
 
-      // 2. Now ask for the expert's position, allowing tool calls for search if needed
-      const expertPrompt = userMessage + `\n\nBackground context for your consideration:\n${backgroundContext}\n\nIf you need to cite sources or require web/academic/recent research, use the search_information tool.`;
-
-      const searchFunction = {
-        type: 'function' as const,
-        function: {
-          name: 'search_information',
-          description: 'Search for current, authoritative information to support your analysis',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Search query to find relevant information'
-              },
-              searchType: {
-                type: 'string',
-                enum: ['web', 'academic', 'recent'],
-                description: 'Type of search to perform'
-              }
-            },
-            required: ['query']
-          }
-        }
-      };
+      // 2. Now ask for the expert's position
+      // NOTE: Per-expert Perplexity searches are disabled by default to reduce API load.
+      // Experts should rely on the shared Phase 0 Perplexity research provided in the context.
+      // This significantly reduces Perplexity API calls and avoids rate limiting issues.
+      const expertPrompt = userMessage + `\n\nBackground context for your consideration:\n${backgroundContext}\n\nPlease use the shared background research and citations provided in the context above. Base your analysis on this research and your expertise.`;
 
       const completion = await safeChatCompletion(this.openai, {
         model: 'gpt-4o',
@@ -113,74 +91,11 @@ export class ExpertAgent {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: expertPrompt }
         ],
-        tools: [searchFunction],
-        tool_choice: 'auto',
         temperature: 0.7,
         max_tokens: 2000
       });
 
-      let finalResponse = completion.choices[0]?.message;
-      let searchResults: any[] = [];
-
-      // Only call Perplexity if the expert requests a search (tool call)
-      if (finalResponse?.tool_calls) {
-        const toolCallResults = [];
-        for (const toolCall of finalResponse.tool_calls) {
-          if (toolCall.function?.name === 'search_information') {
-            const args = JSON.parse(toolCall.function.arguments);
-            console.log(`[${this.config.role}] Searching (Perplexity): ${args.query}`);
-            try {
-              let searchResult;
-              switch (args.searchType) {
-                case 'academic':
-                  searchResult = await this.perplexity.searchAcademic(args.query);
-                  break;
-                case 'recent':
-                  searchResult = await this.perplexity.searchRecent(args.query);
-                  break;
-                default:
-                  searchResult = await this.perplexity.search({
-                    query: args.query,
-                    searchContextSize: 'low' // Use low context for cost control
-                  });
-              }
-              searchResults.push(...searchResult.searchResults);
-              toolCallResults.push({
-                tool_call_id: toolCall.id,
-                role: 'tool' as const,
-                content: JSON.stringify({
-                  content: searchResult.content,
-                  citations: searchResult.citations,
-                  searchResults: searchResult.searchResults
-                })
-              });
-            } catch (error) {
-              console.error(`Search failed for ${args.query}:`, error);
-              toolCallResults.push({
-                tool_call_id: toolCall.id,
-                role: 'tool' as const,
-                content: JSON.stringify({
-                  error: 'Search failed',
-                  message: error instanceof Error ? error.message : 'Unknown error'
-                })
-              });
-            }
-          }
-        }
-        // Get the final response after tool calls
-        const followUpCompletion = await safeChatCompletion(this.openai, {
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: expertPrompt },
-            finalResponse,
-            ...toolCallResults
-          ],
-          temperature: 0.7,
-          max_tokens: 2000
-        });
-        finalResponse = followUpCompletion.choices[0]?.message;
-      }
+      const finalResponse = completion.choices[0]?.message;
 
       const responseContent = finalResponse?.content;
       if (!responseContent) {
