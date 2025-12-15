@@ -102,6 +102,28 @@ export interface ConvergenceMetrics {
   termination_reason: 'consensus_reached' | 'max_rounds' | 'divergence_stable';
 }
 
+// Expert Persona Details (for PDF export)
+export interface ExpertPersona {
+  name: string;
+  role: string;
+  domain_expertise: string;
+  perspective: string;
+  work_background: string;
+  education_history: string;
+  justification: string;
+  description: string;
+  age?: number;
+  gender?: string;
+  nationality?: string;
+  location?: string;
+  years_experience?: number;
+  organization_type?: string;
+  notable_achievements?: string[];
+  potential_biases?: string[];
+  communication_style?: string;
+  agent_id?: string;
+}
+
 // Final Report Structure
 export interface DelphiReport {
   prompt: DelphiPrompt;
@@ -112,6 +134,7 @@ export interface DelphiReport {
     key_evidence: Citation[];
   };
   expert_positions: ExpertResponse[];
+  expert_personas?: ExpertPersona[];
   contrarian_observations: ContrarianResponse[];
   dissenting_views: {
     position: string;
@@ -176,4 +199,4 @@ export interface SearchResult {
   date?: string;
   summary: string;
   relevance_score?: number;
-}  
+}    
