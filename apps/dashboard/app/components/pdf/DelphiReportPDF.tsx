@@ -302,6 +302,13 @@ interface ContrarianObservation {
   validity_assessment?: string;
 }
 
+interface DissentingView {
+  position: string;
+  expert_ids?: string[];
+  reasoning?: string;
+  sources?: Source[];
+}
+
 interface DelphiReportData {
   prompt?: {
     question?: string;
@@ -324,7 +331,7 @@ interface DelphiReportData {
   expert_personas?: ExpertPersona[];
   round_history?: RoundSynthesis[];
   contrarian_observations?: ContrarianObservation[];
-  dissenting_views?: string[];
+  dissenting_views?: (string | DissentingView)[];
 }
 
 interface DelphiReportPDFProps {
@@ -473,9 +480,31 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
         {report.dissenting_views && report.dissenting_views.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Dissenting Views</Text>
-            {report.dissenting_views.map((view, i) => (
-              <Text key={i} style={styles.areaItem}>• {view}</Text>
-            ))}
+            {report.dissenting_views.map((view, i) => {
+              if (typeof view === 'string') {
+                return <Text key={i} style={styles.areaItem}>• {view}</Text>;
+              }
+              return (
+                <View key={i} style={{marginBottom: 8, padding: 8, backgroundColor: '#fef3c7', borderRadius: 4}}>
+                  <Text style={{fontSize: 10, color: '#92400e', lineHeight: 1.4}}>{view.position}</Text>
+                  {view.reasoning && (
+                    <Text style={{fontSize: 9, color: '#78350f', marginTop: 4, lineHeight: 1.4}}>
+                      Reasoning: {view.reasoning}
+                    </Text>
+                  )}
+                  {view.sources && view.sources.length > 0 && (
+                    <View style={{marginTop: 4}}>
+                      <Text style={{fontSize: 8, color: '#92400e'}}>Sources:</Text>
+                      {view.sources.map((source, idx) => (
+                        <Link key={idx} src={source.url || ''} style={{fontSize: 8, color: '#3b82f6', marginLeft: 8}}>
+                          {source.title || source.url || 'Untitled'}
+                        </Link>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
           </View>
         )}
 
@@ -606,8 +635,8 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
                     <Text style={styles.expertDetailLabel}>Sources Cited ({expert.sources.length}):</Text>
                     {expert.sources.map((source, idx) => (
                       <View key={idx} style={{marginLeft: 8, marginBottom: 4}}>
-                        <Link src={source.url} style={{fontSize: 9, color: '#3b82f6'}}>
-                          {source.title || source.url}
+                        <Link src={source.url || ''} style={{fontSize: 9, color: '#3b82f6'}}>
+                          {source.title || source.url || 'Untitled'}
                         </Link>
                       </View>
                     ))}
@@ -726,8 +755,8 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
                   <Text style={styles.expertDetailLabel}>Counter Evidence:</Text>
                   {obs.counter_evidence.map((source, idx) => (
                     <View key={idx} style={{marginLeft: 8, marginBottom: 2}}>
-                      <Link src={source.url} style={{fontSize: 9, color: '#3b82f6'}}>
-                        {source.title || source.url}
+                      <Link src={source.url || ''} style={{fontSize: 9, color: '#3b82f6'}}>
+                        {source.title || source.url || 'Untitled'}
                       </Link>
                     </View>
                   ))}
@@ -752,10 +781,10 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
           
           {allSources.map((source, i) => (
             <View key={i} style={styles.sourceCard} wrap={false}>
-              <Link src={source.url} style={styles.sourceTitle}>
+              <Link src={source.url || ''} style={styles.sourceTitle}>
                 {source.title || 'Untitled Source'}
               </Link>
-              <Text style={styles.sourceUrl}>{source.url}</Text>
+              <Text style={styles.sourceUrl}>{source.url || ''}</Text>
               {source.relevance && (
                 <Text style={styles.sourceRelevance}>{source.relevance}</Text>
               )}
