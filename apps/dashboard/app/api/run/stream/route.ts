@@ -1,4 +1,4 @@
-import { getRunRecord } from '../route';
+import { getRunRecord } from '../store';
 export const runtime = 'nodejs';
 
 export async function GET(req: Request) {
