@@ -14,7 +14,7 @@ export class PerplexityTool {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      timeout: 30000 // 30 second timeout
+      timeout: 90000 // 90 second timeout
     });
 
     // Add response interceptor for error handling
@@ -215,4 +215,4 @@ export class PerplexityTool {
       return false;
     }
   }
-} 
+}  
