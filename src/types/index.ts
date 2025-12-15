@@ -31,6 +31,21 @@ export const ExpertResponseSchema = z.object({
 
 export type ExpertResponse = z.infer<typeof ExpertResponseSchema>;
 
+// Citation Issues Schema for contrarian validation
+export const CitationIssuesSchema = z.object({
+  uncited_claims: z.array(z.string()).optional(),
+  weak_citations: z.array(z.string()).optional(),
+  citation_gaps: z.array(z.string()).optional(),
+  echo_chamber_risk: z.string().optional()
+});
+
+// Assumption Validation Schema
+export const AssumptionValidationSchema = z.object({
+  assumption: z.string(),
+  validity: z.enum(['valid', 'questionable', 'invalid']),
+  reasoning: z.string()
+});
+
 // Contrarian Response Schema
 export const ContrarianResponseSchema = z.object({
   critique: z.string().min(50, "Critique must be at least 50 characters"),
@@ -41,9 +56,13 @@ export const ContrarianResponseSchema = z.object({
     url: z.string().url(),
     summary: z.string()
   })).optional(),
+  citation_issues: CitationIssuesSchema.optional(),
+  assumption_validation: z.array(AssumptionValidationSchema).optional(),
   agent_id: z.string()
 });
 
+export type CitationIssues = z.infer<typeof CitationIssuesSchema>;
+export type AssumptionValidation = z.infer<typeof AssumptionValidationSchema>;
 export type ContrarianResponse = z.infer<typeof ContrarianResponseSchema>;
 
 // Round Synthesis
@@ -157,4 +176,4 @@ export interface SearchResult {
   date?: string;
   summary: string;
   relevance_score?: number;
-} 
+}  
