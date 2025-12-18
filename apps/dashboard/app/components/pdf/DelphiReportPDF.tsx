@@ -553,10 +553,44 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
                   <Text style={styles.expertPosition}>{expert.position}</Text>
                 </View>
 
+                {expert.justification_basis && (
+                  <View style={{marginBottom: 6}}>
+                    <Text style={{fontSize: 8, color: '#64748b'}}>
+                      Justification: {expert.justification_basis === 'research_dominant' ? 'Research-Based' 
+                        : expert.justification_basis === 'experience_dominant' ? 'Experience-Based'
+                        : expert.justification_basis === 'balanced' ? 'Balanced (Research + Experience)'
+                        : 'Theoretical Framework'}
+                    </Text>
+                  </View>
+                )}
+
                 {expert.reasoning && (
                   <View style={{marginBottom: 8}}>
                     <Text style={styles.expertDetailLabel}>Reasoning:</Text>
                     <Text style={styles.expertDetailText}>{expert.reasoning}</Text>
+                  </View>
+                )}
+
+                {expert.research_reasoning && (
+                  <View style={{marginBottom: 8}}>
+                    <Text style={styles.expertDetailLabel}>Research-Based Reasoning:</Text>
+                    <Text style={styles.expertDetailText}>{expert.research_reasoning}</Text>
+                  </View>
+                )}
+
+                {expert.experience_reasoning && (
+                  <View style={{marginBottom: 8}}>
+                    <Text style={styles.expertDetailLabel}>Experience-Based Reasoning:</Text>
+                    <Text style={styles.expertDetailText}>{expert.experience_reasoning}</Text>
+                  </View>
+                )}
+
+                {expert.conditional_factors && expert.conditional_factors.length > 0 && (
+                  <View style={{marginBottom: 8}}>
+                    <Text style={styles.expertDetailLabel}>Conditional Factors:</Text>
+                    {expert.conditional_factors.map((factor, idx) => (
+                      <Text key={idx} style={styles.listItem}>• {factor}</Text>
+                    ))}
                   </View>
                 )}
                 

@@ -26,17 +26,34 @@ Your response must include:
 
 **Position**: A clear, concise statement of your expert view (2-3 sentences)
 
-**Reasoning**: Detailed analysis supporting your position, including:
-- Key factors and considerations from your expertise domain
-- Relevant frameworks, theories, or methodologies
-- Risk assessment and potential implications
-- Limitations or uncertainties in your analysis
+**Reasoning**: Detailed analysis supporting your position, structured as:
+
+*Research-Based Reasoning*: What does the published literature, empirical studies, and documented evidence say?
+- Cite specific studies, meta-analyses, or systematic reviews
+- Reference established theories and frameworks
+- Note the strength and quality of the evidence
+
+*Experience-Based Reasoning*: What does your professional/practical experience suggest?
+- Draw on case studies, real-world implementations, or observed patterns
+- Share insights from your work background that inform your view
+- Note practical considerations that may not appear in research
+
+*Conditional Factors*: Under what conditions does your position hold or change?
+- Specify "if X, then Y" relationships
+- Note context-dependent caveats
+- Identify boundary conditions where your position may not apply
 
 **Confidence Score**: Rate your confidence 1-10, where:
 - 1-3: Low confidence, significant uncertainty or insufficient evidence
 - 4-6: Moderate confidence, some uncertainty or conflicting evidence  
 - 7-8: High confidence, strong evidence and clear reasoning
 - 9-10: Very high confidence, overwhelming evidence and consensus in field
+
+**Justification Basis**: Indicate the primary basis for your position:
+- "research_dominant": Position primarily supported by published research/evidence
+- "experience_dominant": Position primarily informed by professional experience
+- "balanced": Position draws equally from research and experience
+- "theoretical": Position based on theoretical frameworks with limited empirical validation
 
 **Sources**: List all sources used, with URLs and brief relevance notes
 
@@ -65,7 +82,14 @@ Return your response as valid JSON matching this schema:
 ```json
 {
   "position": "Clear statement of your expert position",
-  "reasoning": "Detailed analysis and justification", 
+  "reasoning": "Detailed analysis and justification combining research and experience",
+  "research_reasoning": "What published research and empirical evidence supports this position",
+  "experience_reasoning": "What professional experience and practical insights inform this position",
+  "conditional_factors": [
+    "If X condition, then Y applies",
+    "This position assumes Z context"
+  ],
+  "justification_basis": "research_dominant|experience_dominant|balanced|theoretical",
   "confidence": 7,
   "sources": [
     {
@@ -80,4 +104,4 @@ Return your response as valid JSON matching this schema:
 }
 ```
 
-Remember: Your goal is to contribute meaningful expertise to reach the best possible understanding of the question, not to "win" an argument. Quality analysis with proper citations is essential.    
+Remember: Your goal is to contribute meaningful expertise to reach the best possible understanding of the question, not to "win" an argument. Quality analysis with proper citations is essential.                
