@@ -110,21 +110,27 @@ The dashboard provides a modern UI to run Delphi analyses and explore results wi
 
 ### Run locally
 ```bash
-# From repo root
+# From repo root - IMPORTANT: Both installs are required!
+npm install              # Install root dependencies (required for CLI spawning)
 cd apps/dashboard
-npm install            # once
-npm run dev            # starts on http://localhost:3001
+npm install              # Install dashboard dependencies
+npm run dev              # starts on http://localhost:3001
 ```
+
+The dashboard spawns the CLI from the repo root, so **root dependencies must be installed** for the dashboard to run Delphi analyses.
 
 ### Build and start (production)
 ```bash
+npm install              # From repo root
 cd apps/dashboard
+npm install
 npm run build
-npm start              # http://localhost:3001
+npm start                # http://localhost:3001
 ```
 
 ### Notes
-- The dashboard can start new Delphi runs (requires API keys configured in root `.env`)
+- The dashboard spawns the CLI from the repo root, so both root and dashboard `npm install` are required
+- API keys must be configured in the root `.env` file (not in `apps/dashboard/.env`)
 - Historical runs are read from `../../output` directory
 - Clear the `.next` cache (`rm -rf .next`) if you encounter stale UI issues after updates
 
