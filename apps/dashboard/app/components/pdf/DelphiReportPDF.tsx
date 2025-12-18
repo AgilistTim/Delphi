@@ -526,11 +526,12 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
           {report.expert_positions.map((expert, i) => {
             const persona = getPersonaForExpert(expert);
             return (
-              <View key={i} style={styles.expertCard} wrap={false}>
+              <View key={i} style={styles.expertCard}>
                 <View style={styles.expertHeader}>
                   <View style={{flex: 1}}>
                     {persona && <Text style={styles.expertName}>{persona.name}</Text>}
                     <Text style={styles.expertRole}>{expert.expertise_area || `Expert ${i + 1}`}</Text>
+                    <Text style={{fontSize: 8, color: '#94a3b8', fontStyle: 'italic', marginTop: 2}}>AI-Generated Persona</Text>
                     {persona && (
                       <Text style={styles.expertDemographics}>
                         {[
@@ -660,7 +661,7 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
           </View>
           
           {report.round_history!.map((round, i) => (
-            <View key={i} style={styles.roundCard} wrap={false}>
+            <View key={i} style={styles.roundCard}>
               <View style={styles.roundHeader}>
                 <Text style={styles.roundTitle}>Round {round.round_number}</Text>
               </View>
@@ -739,7 +740,7 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
           </View>
           
           {report.contrarian_observations.map((obs, i) => (
-            <View key={i} style={{...styles.roundCard, borderLeftColor: '#ef4444'}} wrap={false}>
+            <View key={i} style={{...styles.roundCard, borderLeftColor: '#ef4444'}}>
               <Text style={styles.roundTitle}>Challenge {i + 1}</Text>
               <Text style={{...styles.expertDetailText, marginTop: 6}}>{obs.challenge}</Text>
               
@@ -780,7 +781,7 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
           </View>
           
           {allSources.map((source, i) => (
-            <View key={i} style={styles.sourceCard} wrap={false}>
+            <View key={i} style={styles.sourceCard}>
               <Link src={source.url || ''} style={styles.sourceTitle}>
                 {source.title || 'Untitled Source'}
               </Link>

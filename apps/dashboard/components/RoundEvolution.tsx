@@ -183,14 +183,31 @@ function RoundCard({ round, isLast }: { round: RoundData; isLast: boolean }) {
                 {/* Clusters */}
                 {round.clusters && round.clusters.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-medium text-slate-700 mb-2">Expert Clusters</h4>
-                    <div className="space-y-2">
+                    <h4 className="text-sm font-medium text-slate-700 mb-2">Expert Clusters & Positions</h4>
+                    <div className="space-y-3">
                       {round.clusters.map((cluster, i) => (
-                        <div key={i} className="p-3 bg-slate-50 rounded-lg">
-                          <div className="font-medium text-slate-800 text-sm">{cluster.theme}</div>
-                          <div className="text-xs text-slate-500 mt-1">
-                            {cluster.expert_ids.length} experts | Confidence: {cluster.confidence_range[0]}-{cluster.confidence_range[1]}/10
+                        <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="font-medium text-slate-800 text-sm">{cluster.theme}</div>
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+                              {cluster.expert_ids.length} expert{cluster.expert_ids.length !== 1 ? 's' : ''}
+                            </span>
                           </div>
+                          <div className="text-xs text-slate-500 mb-2">
+                            Confidence range: {cluster.confidence_range[0]}-{cluster.confidence_range[1]}/10
+                          </div>
+                          {cluster.positions && cluster.positions.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-slate-200">
+                              <div className="text-xs font-medium text-slate-600 mb-1">Positions:</div>
+                              <ul className="space-y-1">
+                                {cluster.positions.map((position, idx) => (
+                                  <li key={idx} className="text-xs text-slate-600 pl-2 border-l-2 border-blue-300">
+                                    {position.length > 200 ? `${position.slice(0, 200)}...` : position}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
