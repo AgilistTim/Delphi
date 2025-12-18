@@ -1,4 +1,4 @@
-import { ExpertResponse, RoundSynthesis, ConvergenceMetrics, Citation } from '../types/index.js';
+import { ExpertResponse, RoundSynthesis, ConvergenceMetrics, Citation, ConsensusType } from '../types/index.js';
 
 export class ConvergenceTracker {
   private roundHistory: RoundSynthesis[] = [];
@@ -31,6 +31,11 @@ export class ConvergenceTracker {
     const consensusClarity = this.calculateConsensusClarity();
     const citationOverlap = this.calculateCitationOverlap();
     const terminationReason = this.determineTerminationReason();
+    const { consensusType, reasoning } = this.classifyConsensusType(
+      positionStability,
+      confidenceSpread,
+      consensusClarity
+    );
 
     return {
       position_stability: positionStability,
@@ -38,8 +43,78 @@ export class ConvergenceTracker {
       consensus_clarity: consensusClarity,
       citation_overlap: citationOverlap,
       rounds_completed: this.roundHistory.length,
-      termination_reason: terminationReason
+      termination_reason: terminationReason,
+      consensus_type: consensusType,
+      consensus_type_reasoning: reasoning
     };
+  }
+
+  /**
+   * Classify consensus into four tiers based on HAH-Delphi model:
+   * - Strong: High agreement + high confidence across experts
+   * - Conditional: Agreement with important caveats or context-dependencies
+   * - Operational: Practical agreement despite theoretical differences
+   * - Divergent: Legitimate, stable disagreement that should be preserved
+   */
+  private classifyConsensusType(
+    positionStability: number,
+    confidenceSpread: number,
+    consensusClarity: number
+  ): { consensusType: ConsensusType; reasoning: string } {
+    const currentRound = this.roundHistory[this.roundHistory.length - 1];
+    const hasConditionalFactors = this.detectConditionalFactors();
+    const clusterCount = currentRound?.clusters?.length || 0;
+    
+    if (consensusClarity > 0.8 && positionStability > 0.8 && confidenceSpread < 1.5) {
+      return {
+        consensusType: 'strong',
+        reasoning: `High consensus clarity (${(consensusClarity * 100).toFixed(0)}%), stable positions (${(positionStability * 100).toFixed(0)}%), and low confidence spread (${confidenceSpread.toFixed(2)}) indicate strong agreement across experts.`
+      };
+    }
+    
+    if (consensusClarity > 0.6 && hasConditionalFactors) {
+      return {
+        consensusType: 'conditional',
+        reasoning: `Moderate consensus clarity (${(consensusClarity * 100).toFixed(0)}%) with context-dependent caveats. Experts agree under specific conditions but note important boundary factors.`
+      };
+    }
+    
+    if (positionStability > 0.7 && consensusClarity > 0.5 && clusterCount <= 2) {
+      return {
+        consensusType: 'operational',
+        reasoning: `Practical agreement achieved (${clusterCount} main cluster${clusterCount !== 1 ? 's' : ''}) despite some theoretical differences. Positions are stable enough for actionable recommendations.`
+      };
+    }
+    
+    return {
+      consensusType: 'divergent',
+      reasoning: `Legitimate disagreement persists across ${clusterCount} distinct viewpoint clusters. These divergent perspectives represent valid alternative interpretations that should be preserved rather than averaged.`
+    };
+  }
+
+  /**
+   * Detect if experts have provided conditional factors in their responses
+   */
+  private detectConditionalFactors(): boolean {
+    let hasConditionals = false;
+    this.expertHistories.forEach((history) => {
+      if (history.length > 0) {
+        const latestResponse = history[history.length - 1];
+        const response = latestResponse as any;
+        if (response.conditional_factors && response.conditional_factors.length > 0) {
+          hasConditionals = true;
+        }
+        if (response.reasoning && (
+          response.reasoning.toLowerCase().includes('if ') ||
+          response.reasoning.toLowerCase().includes('depends on') ||
+          response.reasoning.toLowerCase().includes('conditional') ||
+          response.reasoning.toLowerCase().includes('assuming')
+        )) {
+          hasConditionals = true;
+        }
+      }
+    });
+    return hasConditionals;
   }
 
   /**
@@ -262,4 +337,4 @@ export class ConvergenceTracker {
   getExpertEvolution(): Map<string, ExpertResponse[]> {
     return new Map(this.expertHistories);
   }
-} 
+}    

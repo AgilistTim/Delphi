@@ -10,6 +10,9 @@ export interface Citation {
   relevance?: string;
 }
 
+export type JustificationBasis = 'research_dominant' | 'experience_dominant' | 'balanced' | 'theoretical';
+export type ConsensusType = 'strong' | 'conditional' | 'operational' | 'divergent';
+
 export interface DelphiReport {
   prompt: {
     question: string;
@@ -24,6 +27,10 @@ export interface DelphiReport {
   expert_positions: Array<{
     position: string;
     reasoning: string;
+    research_reasoning?: string;
+    experience_reasoning?: string;
+    conditional_factors?: string[];
+    justification_basis?: JustificationBasis;
     confidence: number;
     sources: Citation[];
     expertise_area?: string;
@@ -48,10 +55,11 @@ export interface DelphiReport {
     citation_overlap: number;
     rounds_completed: number;
     termination_reason: TerminationReason;
+    consensus_type?: ConsensusType;
+    consensus_type_reasoning?: string;
   };
   round_history: any[];
   generated_at: string | Date;
-  // Some runs may include this field as per current implementation
   failed_experts?: Array<{ role: string; error: string }>;
 }
 

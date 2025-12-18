@@ -14,10 +14,24 @@ export interface Citation {
   relevance?: string | undefined;
 }
 
+// Justification basis enum for expert responses
+export const JustificationBasisEnum = z.enum([
+  'research_dominant',
+  'experience_dominant', 
+  'balanced',
+  'theoretical'
+]);
+
+export type JustificationBasis = z.infer<typeof JustificationBasisEnum>;
+
 // Expert Response Schema with Zod validation
 export const ExpertResponseSchema = z.object({
   position: z.string().min(10, "Position must be at least 10 characters"),
   reasoning: z.string().min(50, "Reasoning must be at least 50 characters"),
+  research_reasoning: z.string().optional(),
+  experience_reasoning: z.string().optional(),
+  conditional_factors: z.array(z.string()).optional(),
+  justification_basis: JustificationBasisEnum.optional(),
   confidence: z.number().min(1).max(10),
   sources: z.array(z.object({
     title: z.string(),
@@ -92,6 +106,13 @@ export interface AgentConfig {
   bias_instructions?: string;
 }
 
+// Four-tier consensus classification (HAH-Delphi model)
+export type ConsensusType = 
+  | 'strong'        // High agreement + high confidence across experts
+  | 'conditional'   // Agreement with important caveats or context-dependencies
+  | 'operational'   // Practical agreement despite theoretical differences
+  | 'divergent';    // Legitimate, stable disagreement that should be preserved
+
 // Convergence Metrics
 export interface ConvergenceMetrics {
   position_stability: number; // 0-1, how many experts changed positions
@@ -100,6 +121,8 @@ export interface ConvergenceMetrics {
   citation_overlap: number; // 0-1, how much sources overlap between experts
   rounds_completed: number;
   termination_reason: 'consensus_reached' | 'max_rounds' | 'divergence_stable';
+  consensus_type: ConsensusType; // Four-tier classification
+  consensus_type_reasoning: string; // Explanation for the classification
 }
 
 // Expert Persona Details (for PDF export)
@@ -199,4 +222,4 @@ export interface SearchResult {
   date?: string;
   summary: string;
   relevance_score?: number;
-}    
+}                

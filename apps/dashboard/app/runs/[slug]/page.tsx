@@ -290,6 +290,27 @@ export default function RunPage({ params }: RunPageProps) {
                   <CardTitle>Convergence Metrics</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {report.convergence_analysis?.consensus_type && (
+                    <div className="mb-4 p-3 rounded-lg bg-gradient-to-r from-slate-50 to-white border border-slate-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-medium text-slate-600">Consensus Type:</span>
+                        <Badge className={
+                          report.convergence_analysis.consensus_type === 'strong' 
+                            ? 'bg-green-100 text-green-700 border-green-200'
+                            : report.convergence_analysis.consensus_type === 'conditional'
+                            ? 'bg-blue-100 text-blue-700 border-blue-200'
+                            : report.convergence_analysis.consensus_type === 'operational'
+                            ? 'bg-amber-100 text-amber-700 border-amber-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }>
+                          {report.convergence_analysis.consensus_type.charAt(0).toUpperCase() + report.convergence_analysis.consensus_type.slice(1)}
+                        </Badge>
+                      </div>
+                      {report.convergence_analysis.consensus_type_reasoning && (
+                        <p className="text-xs text-slate-500">{report.convergence_analysis.consensus_type_reasoning}</p>
+                      )}
+                    </div>
+                  )}
                   <MetricRow 
                     label="Position Stability" 
                     value={report.convergence_analysis?.position_stability} 
