@@ -8,6 +8,7 @@ yarn-error.log*
 dist/
 build/
 *.tsbuildinfo
+.next/
 
 # Environment variables
 .env
@@ -56,4 +57,4 @@ temp/
 
 # Lock files (commit yarn.lock or package-lock.json based on your preference)
 # package-lock.json
-# yarn.lock 
+# yarn.lock  
