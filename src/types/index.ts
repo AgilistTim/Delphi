@@ -74,6 +74,16 @@ export const AssumptionValidationSchema = z.object({
   reasoning: z.string()
 });
 
+// Frame Expansion Schema (6 dimensions for contrarian)
+export const FrameExpansionSchema = z.object({
+  steelman_opposite_goal: z.string().min(20, "Steelman of opposite goal required"),
+  failure_modes: z.array(z.string()).min(1, "At least one failure mode required"),
+  second_order_effects: z.array(z.string()).min(1, "At least one second-order effect required"),
+  stakeholder_inversion: z.array(z.string()).min(1, "At least one stakeholder inversion required"),
+  boundary_conditions: z.array(z.string()).min(1, "At least one boundary condition required"),
+  metric_traps: z.array(z.string()).min(1, "At least one metric trap required")
+});
+
 // Contrarian Response Schema
 export const ContrarianResponseSchema = z.object({
   critique: z.string().min(50, "Critique must be at least 50 characters"),
@@ -86,6 +96,7 @@ export const ContrarianResponseSchema = z.object({
   })).optional(),
   citation_issues: CitationIssuesSchema.optional(),
   assumption_validation: z.array(AssumptionValidationSchema).optional(),
+  frame_expansion: FrameExpansionSchema.optional(),
   agent_id: z.string()
 });
 
@@ -176,6 +187,7 @@ export interface ExpertPersona {
 // Final Report Structure
 export interface DelphiReport {
   prompt: DelphiPrompt;
+  question_analysis?: QuestionAnalysis;
   consensus_summary: {
     final_position: string;
     support_level: string; // e.g., "4 of 5 experts support"
@@ -194,6 +206,7 @@ export interface DelphiReport {
   convergence_analysis: ConvergenceMetrics;
   round_history: RoundSynthesis[];
   round_results?: RoundResult[];
+  cost_summary?: CostSummary;
   generated_at: Date;
 }
 
@@ -249,4 +262,56 @@ export interface SearchResult {
   date?: string;
   summary: string;
   relevance_score?: number;
-}                                                        
+}
+
+// Question Analysis from Question Refiner stage
+export interface QuestionAnalysis {
+  original_question: string;
+  decision_type: 'strategy' | 'policy' | 'hiring' | 'product' | 'risk' | 'operations' | 'research' | 'other';
+  time_horizon: 'immediate' | 'short_term' | 'medium_term' | 'long_term' | 'unknown';
+  primary_objective: 'speed' | 'accuracy' | 'innovation' | 'cost' | 'safety' | 'quality' | 'multiple' | 'unclear';
+  constraints: string[];
+  unknowns: string[];
+  inferred_assumptions: string[];
+  ambiguity_score: number; // 0-1, higher = more ambiguous/vague
+  refined_question?: string; // Optional clarified version
+}
+
+// Contrarian Frame Expansion (6 dimensions)
+export interface FrameExpansion {
+  steelman_opposite_goal: string;
+  failure_modes: string[];
+  second_order_effects: string[];
+  stakeholder_inversion: string[];
+  boundary_conditions: string[];
+  metric_traps: string[];
+}
+
+// Token usage tracking
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd?: number;
+}
+
+// Cost tracking per agent/round
+export interface AgentUsage {
+  agent_type: 'expert' | 'contrarian' | 'orchestrator' | 'refiner' | 'perplexity';
+  agent_id?: string;
+  round?: number;
+  usage: TokenUsage;
+  model?: string;
+}
+
+// Aggregated cost summary
+export interface CostSummary {
+  total_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  estimated_total_cost_usd: number;
+  breakdown_by_agent_type: Record<string, TokenUsage>;
+  breakdown_by_round: Record<number, TokenUsage>;
+  perplexity_calls: number;
+  openai_calls: number;
+}                                                                                    

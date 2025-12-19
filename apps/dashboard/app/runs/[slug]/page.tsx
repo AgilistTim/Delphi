@@ -58,11 +58,35 @@ interface RoundResult {
   contrarian_responses: ContrarianObservation[];
 }
 
+interface QuestionAnalysis {
+  original_question: string;
+  decision_type: string;
+  time_horizon: string;
+  primary_objective: string;
+  constraints: string[];
+  unknowns: string[];
+  inferred_assumptions: string[];
+  ambiguity_score: number;
+  refined_question?: string;
+}
+
+interface CostSummary {
+  total_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  estimated_total_cost_usd: number;
+  openai_calls: number;
+  perplexity_calls: number;
+  breakdown_by_agent: Record<string, { tokens: number; cost: number; calls: number }>;
+  breakdown_by_round: Record<number, { tokens: number; cost: number }>;
+}
+
 interface DelphiReport {
   prompt?: {
     question?: string;
     context?: string;
   };
+  question_analysis?: QuestionAnalysis;
   generated_at?: string;
   consensus_summary?: {
     final_position?: string;
@@ -87,6 +111,7 @@ interface DelphiReport {
   contrarian_observations?: ContrarianObservation[];
   round_history?: RoundData[];
   round_results?: RoundResult[];
+  cost_summary?: CostSummary;
 }
 
 interface RunPageProps {
@@ -389,6 +414,151 @@ export default function RunPage({ params }: RunPageProps) {
                       </a>
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Question Analysis */}
+            {report.question_analysis && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle>Question Analysis</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid md:grid-cols-3 gap-4">
+                    <div className="p-3 bg-slate-50 rounded-lg">
+                      <div className="text-sm text-slate-500">Decision Type</div>
+                      <div className="font-semibold text-slate-900 capitalize">
+                        {report.question_analysis.decision_type.replace(/_/g, ' ')}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-lg">
+                      <div className="text-sm text-slate-500">Time Horizon</div>
+                      <div className="font-semibold text-slate-900 capitalize">
+                        {report.question_analysis.time_horizon.replace(/_/g, ' ')}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-lg">
+                      <div className="text-sm text-slate-500">Primary Objective</div>
+                      <div className="font-semibold text-slate-900 capitalize">
+                        {report.question_analysis.primary_objective.replace(/_/g, ' ')}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <div className="text-sm text-amber-700 font-medium mb-1">Ambiguity Score</div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-amber-200 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-amber-500 rounded-full"
+                          style={{ width: `${report.question_analysis.ambiguity_score * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-semibold text-amber-700">
+                        {(report.question_analysis.ambiguity_score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {report.question_analysis.constraints.length > 0 && (
+                    <div>
+                      <div className="text-sm text-slate-500 mb-2">Constraints Identified</div>
+                      <div className="flex flex-wrap gap-2">
+                        {report.question_analysis.constraints.map((constraint, idx) => (
+                          <Badge key={idx} variant="outline" className="bg-slate-50">
+                            {constraint}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {report.question_analysis.unknowns.length > 0 && (
+                    <div>
+                      <div className="text-sm text-slate-500 mb-2">Key Unknowns</div>
+                      <div className="flex flex-wrap gap-2">
+                        {report.question_analysis.unknowns.map((unknown, idx) => (
+                          <Badge key={idx} variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                            {unknown}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {report.question_analysis.inferred_assumptions.length > 0 && (
+                    <div>
+                      <div className="text-sm text-slate-500 mb-2">Inferred Assumptions</div>
+                      <ul className="text-sm text-slate-700 space-y-1">
+                        {report.question_analysis.inferred_assumptions.map((assumption, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-slate-400">•</span>
+                            {assumption}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Cost Summary */}
+            {report.cost_summary && (
+              <Card className="mt-6">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Cost Summary
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid md:grid-cols-4 gap-4">
+                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div className="text-sm text-green-700">Estimated Cost</div>
+                      <div className="text-xl font-bold text-green-800">
+                        ${report.cost_summary.estimated_total_cost_usd.toFixed(4)}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-lg">
+                      <div className="text-sm text-slate-500">Total Tokens</div>
+                      <div className="font-semibold text-slate-900">
+                        {report.cost_summary.total_tokens.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-lg">
+                      <div className="text-sm text-slate-500">OpenAI Calls</div>
+                      <div className="font-semibold text-slate-900">
+                        {report.cost_summary.openai_calls}
+                      </div>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded-lg">
+                      <div className="text-sm text-slate-500">Perplexity Calls</div>
+                      <div className="font-semibold text-slate-900">
+                        {report.cost_summary.perplexity_calls}
+                      </div>
+                    </div>
+                  </div>
+
+                  {Object.keys(report.cost_summary.breakdown_by_agent).length > 0 && (
+                    <div>
+                      <div className="text-sm text-slate-500 mb-2">Cost by Agent Type</div>
+                      <div className="space-y-2">
+                        {Object.entries(report.cost_summary.breakdown_by_agent).map(([agent, data]) => (
+                          <div key={agent} className="flex items-center justify-between p-2 bg-slate-50 rounded">
+                            <span className="text-sm font-medium text-slate-700 capitalize">{agent.replace(/_/g, ' ')}</span>
+                            <div className="text-sm text-slate-600">
+                              <span className="font-semibold">${data.cost.toFixed(4)}</span>
+                              <span className="text-slate-400 ml-2">({data.tokens.toLocaleString()} tokens, {data.calls} calls)</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
