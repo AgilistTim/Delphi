@@ -30,6 +30,8 @@ export class ConvergenceTracker {
     const confidenceSpread = this.calculateConfidenceSpread();
     const consensusClarity = this.calculateConsensusClarity();
     const citationOverlap = this.calculateCitationOverlap();
+    const disagreementIndex = this.calculateDisagreementIndex();
+    const minorityPersistence = this.calculateMinorityPersistence();
     const terminationReason = this.determineTerminationReason();
     const { consensusType, reasoning } = this.classifyConsensusType(
       positionStability,
@@ -42,6 +44,8 @@ export class ConvergenceTracker {
       confidence_spread: confidenceSpread,
       consensus_clarity: consensusClarity,
       citation_overlap: citationOverlap,
+      disagreement_index: disagreementIndex,
+      minority_persistence: minorityPersistence,
       rounds_completed: this.roundHistory.length,
       termination_reason: terminationReason,
       consensus_type: consensusType,
@@ -208,6 +212,70 @@ export class ConvergenceTracker {
   }
 
   /**
+   * Calculate disagreement index using cluster entropy (0-1, where 1 = maximum disagreement)
+   * Higher values indicate more diverse viewpoints across clusters
+   */
+  private calculateDisagreementIndex(): number {
+    if (this.roundHistory.length === 0) return 0;
+
+    const currentRound = this.roundHistory[this.roundHistory.length - 1];
+    const clusters = currentRound.clusters;
+    
+    if (clusters.length <= 1) return 0;
+
+    const totalExperts = clusters.reduce((sum, cluster) => sum + cluster.expert_ids.length, 0);
+    if (totalExperts === 0) return 0;
+
+    let entropy = 0;
+    clusters.forEach(cluster => {
+      const proportion = cluster.expert_ids.length / totalExperts;
+      if (proportion > 0) {
+        entropy -= proportion * Math.log2(proportion);
+      }
+    });
+
+    const maxEntropy = Math.log2(clusters.length);
+    return maxEntropy > 0 ? entropy / maxEntropy : 0;
+  }
+
+  /**
+   * Calculate minority persistence (0-1, where 1 = minority views remain stable across rounds)
+   * Tracks whether minority clusters persist or get absorbed into majority positions
+   */
+  private calculateMinorityPersistence(): number {
+    if (this.roundHistory.length < 2) return 1.0;
+
+    const previousRound = this.roundHistory[this.roundHistory.length - 2];
+    const currentRound = this.roundHistory[this.roundHistory.length - 1];
+
+    const previousClusters = previousRound.clusters;
+    const currentClusters = currentRound.clusters;
+
+    if (previousClusters.length <= 1 || currentClusters.length === 0) return 1.0;
+
+    const previousTotalExperts = previousClusters.reduce((sum, c) => sum + c.expert_ids.length, 0);
+    const previousMinorityClusters = previousClusters.filter(
+      cluster => cluster.expert_ids.length < previousTotalExperts / 2
+    );
+
+    if (previousMinorityClusters.length === 0) return 1.0;
+
+    let persistedMinorities = 0;
+    previousMinorityClusters.forEach(prevMinority => {
+      const prevExpertSet = new Set(prevMinority.expert_ids);
+      const stillMinority = currentClusters.some(currentCluster => {
+        const currentExpertSet = new Set(currentCluster.expert_ids);
+        const overlap = [...prevExpertSet].filter(id => currentExpertSet.has(id)).length;
+        const overlapRatio = overlap / prevMinority.expert_ids.length;
+        return overlapRatio > 0.5;
+      });
+      if (stillMinority) persistedMinorities++;
+    });
+
+    return persistedMinorities / previousMinorityClusters.length;
+  }
+
+  /**
    * Calculate citation overlap between experts (0-1, where 1 = all using same sources)
    */
   private calculateCitationOverlap(): number {
@@ -337,4 +405,4 @@ export class ConvergenceTracker {
   getExpertEvolution(): Map<string, ExpertResponse[]> {
     return new Map(this.expertHistories);
   }
-}    
+}        

@@ -43,6 +43,16 @@ Your response must include:
 - Note context-dependent caveats
 - Identify boundary conditions where your position may not apply
 
+*Falsifiability*: What would change your mind?
+- Specify what evidence, if discovered, would cause you to revise your position
+- Be specific about thresholds or conditions that would trigger reconsideration
+- This demonstrates intellectual honesty and helps identify blind spots
+
+*Strongest Counter-Argument*: What is the best argument AGAINST your position?
+- Present the strongest case an intelligent critic would make
+- Explain why this counter-argument ultimately fails (or acknowledge if it partially succeeds)
+- Cite counter-evidence if available in the provided research
+
 **Confidence Score**: Rate your confidence 1-10, where:
 - 1-3: Low confidence, significant uncertainty or insufficient evidence
 - 4-6: Moderate confidence, some uncertainty or conflicting evidence  
@@ -89,6 +99,8 @@ Return your response as valid JSON matching this schema:
     "If X condition, then Y applies",
     "This position assumes Z context"
   ],
+  "falsifiability": "What specific evidence would cause me to revise this position",
+  "strongest_counter_argument": "The best argument against my position and why it ultimately fails",
   "justification_basis": "research_dominant|experience_dominant|balanced|theoretical",
   "confidence": 7,
   "sources": [
@@ -104,4 +116,4 @@ Return your response as valid JSON matching this schema:
 }
 ```
 
-Remember: Your goal is to contribute meaningful expertise to reach the best possible understanding of the question, not to "win" an argument. Quality analysis with proper citations is essential.                
+Remember: Your goal is to contribute meaningful expertise to reach the best possible understanding of the question, not to "win" an argument. Quality analysis with proper citations is essential.                                

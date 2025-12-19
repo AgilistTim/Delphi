@@ -24,6 +24,18 @@ export const JustificationBasisEnum = z.enum([
 
 export type JustificationBasis = z.infer<typeof JustificationBasisEnum>;
 
+// Epistemic stance types for structured disagreement
+export const EpistemicStanceEnum = z.enum([
+  'status_quo_defender',
+  'methodology_skeptic',
+  'implementation_realist',
+  'ethics_maximalist',
+  'contrarian_challenger',
+  'evidence_synthesizer'
+]);
+
+export type EpistemicStance = z.infer<typeof EpistemicStanceEnum>;
+
 // Expert Response Schema with Zod validation
 export const ExpertResponseSchema = z.object({
   position: z.string().min(10, "Position must be at least 10 characters"),
@@ -31,6 +43,8 @@ export const ExpertResponseSchema = z.object({
   research_reasoning: z.string().optional(),
   experience_reasoning: z.string().optional(),
   conditional_factors: z.array(z.string()).optional(),
+  falsifiability: z.string().optional(),
+  strongest_counter_argument: z.string().optional(),
   justification_basis: JustificationBasisEnum.optional(),
   confidence: z.number().min(1).max(10),
   sources: z.array(z.object({
@@ -119,6 +133,8 @@ export interface ConvergenceMetrics {
   confidence_spread: number; // Standard deviation of confidence scores
   consensus_clarity: number; // 0-1, how clear the consensus is
   citation_overlap: number; // 0-1, how much sources overlap between experts
+  disagreement_index: number; // 0-1, cluster entropy / effective number of clusters (higher = more disagreement)
+  minority_persistence: number; // 0-1, whether minority clusters remain stable vs coerced
   rounds_completed: number;
   termination_reason: 'consensus_reached' | 'max_rounds' | 'divergence_stable';
   consensus_type: ConsensusType; // Four-tier classification
@@ -135,6 +151,8 @@ export interface ExpertPersona {
   education_history: string;
   justification: string;
   description: string;
+  epistemic_stance?: EpistemicStance;
+  initial_position_template?: string;
   age?: number;
   gender?: string;
   nationality?: string;
@@ -222,4 +240,4 @@ export interface SearchResult {
   date?: string;
   summary: string;
   relevance_score?: number;
-}                
+}                                        

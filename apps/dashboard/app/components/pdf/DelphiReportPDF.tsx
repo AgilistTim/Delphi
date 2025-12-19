@@ -259,6 +259,12 @@ interface Source {
 interface ExpertPosition {
   position: string;
   reasoning: string;
+  research_reasoning?: string;
+  experience_reasoning?: string;
+  conditional_factors?: string[];
+  falsifiability?: string;
+  strongest_counter_argument?: string;
+  justification_basis?: 'research_dominant' | 'experience_dominant' | 'balanced' | 'theoretical';
   confidence: number;
   sources: Source[];
   expertise_area?: string;
@@ -591,6 +597,20 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
                     {expert.conditional_factors.map((factor, idx) => (
                       <Text key={idx} style={styles.listItem}>• {factor}</Text>
                     ))}
+                  </View>
+                )}
+
+                {expert.falsifiability && (
+                  <View style={{marginBottom: 8}}>
+                    <Text style={styles.expertDetailLabel}>Falsifiability (What Would Change My Mind):</Text>
+                    <Text style={styles.expertDetailText}>{expert.falsifiability}</Text>
+                  </View>
+                )}
+
+                {expert.strongest_counter_argument && (
+                  <View style={{marginBottom: 8}}>
+                    <Text style={styles.expertDetailLabel}>Strongest Counter-Argument:</Text>
+                    <Text style={styles.expertDetailText}>{expert.strongest_counter_argument}</Text>
                   </View>
                 )}
                 

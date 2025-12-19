@@ -63,7 +63,11 @@ interface DelphiReport {
     consensus_clarity?: number;
     confidence_spread?: number;
     citation_overlap?: number;
+    disagreement_index?: number;
+    minority_persistence?: number;
     termination_reason?: string;
+    consensus_type?: 'strong' | 'conditional' | 'operational' | 'divergent';
+    consensus_type_reasoning?: string;
   };
   expert_positions?: ExpertPosition[];
   contrarian_observations?: ContrarianObservation[];
@@ -330,6 +334,16 @@ export default function RunPage({ params }: RunPageProps) {
                     label="Confidence Spread" 
                     value={report.convergence_analysis?.confidence_spread} 
                     isPercentage={false}
+                  />
+                  <MetricRow 
+                    label="Disagreement Index" 
+                    value={report.convergence_analysis?.disagreement_index} 
+                    isPercentage 
+                  />
+                  <MetricRow 
+                    label="Minority Persistence" 
+                    value={report.convergence_analysis?.minority_persistence} 
+                    isPercentage 
                   />
                 </CardContent>
               </Card>
