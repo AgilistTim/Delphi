@@ -248,6 +248,59 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontStyle: 'italic',
   },
+  stressTestSection: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#fef2f2',
+    borderRadius: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ef4444',
+  },
+  stressTestTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#991b1b',
+  },
+  stressTestSubtitle: {
+    fontSize: 9,
+    color: '#7f1d1d',
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  stressTestItem: {
+    marginBottom: 10,
+  },
+  stressTestLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#991b1b',
+    marginBottom: 3,
+  },
+  stressTestText: {
+    fontSize: 10,
+    color: '#450a0a',
+    lineHeight: 1.4,
+    paddingLeft: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: '#fca5a5',
+  },
+  consensusClassBox: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#f8fafc',
+    borderRadius: 4,
+  },
+  consensusClassLabel: {
+    fontSize: 8,
+    color: '#64748b',
+    marginBottom: 2,
+  },
+  consensusClassValue: {
+    fontSize: 10,
+    color: '#334155',
+    fontWeight: 'bold',
+  },
 });
 
 interface Source {
@@ -302,8 +355,26 @@ interface RoundSynthesis {
   key_insights: string[];
 }
 
+interface ReasoningStressTests {
+  lossy_simplification: string;
+  context_flip: string;
+  incentive_misalignment: string;
+  second_order_failure: string;
+}
+
+interface ConsensusClassification {
+  nature: 'normative' | 'epistemic' | 'mixed';
+  insight_yield: 'low' | 'medium' | 'high';
+  insight_yield_reasoning: string;
+  risk_statement: string;
+}
+
 interface ContrarianObservation {
-  challenge: string;
+  reasoning_stress_tests?: ReasoningStressTests;
+  challenge?: string;
+  critique?: string;
+  alternative_framework?: string;
+  blind_spots?: string[];
   counter_evidence?: Source[];
   validity_assessment?: string;
 }
@@ -332,6 +403,7 @@ interface DelphiReportData {
     position_stability?: number;
     consensus_clarity?: number;
     termination_reason?: string;
+    consensus_classification?: ConsensusClassification;
   };
   expert_positions?: ExpertPosition[];
   expert_personas?: ExpertPersona[];
@@ -481,7 +553,67 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
               </Text>
             </View>
           </View>
+
+          {report.convergence_analysis?.consensus_classification && (
+            <View style={styles.consensusClassBox}>
+              <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                <View style={{flex: 1}}>
+                  <Text style={styles.consensusClassLabel}>Consensus Nature</Text>
+                  <Text style={styles.consensusClassValue}>
+                    {report.convergence_analysis.consensus_classification.nature.charAt(0).toUpperCase() + 
+                     report.convergence_analysis.consensus_classification.nature.slice(1)}
+                  </Text>
+                </View>
+                <View style={{flex: 1}}>
+                  <Text style={styles.consensusClassLabel}>Insight Yield</Text>
+                  <Text style={styles.consensusClassValue}>
+                    {report.convergence_analysis.consensus_classification.insight_yield.charAt(0).toUpperCase() + 
+                     report.convergence_analysis.consensus_classification.insight_yield.slice(1)}
+                  </Text>
+                </View>
+                <View style={{flex: 2}}>
+                  <Text style={styles.consensusClassLabel}>Risk</Text>
+                  <Text style={{fontSize: 9, color: '#dc2626'}}>
+                    {report.convergence_analysis.consensus_classification.risk_statement}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
         </View>
+
+        {report.contrarian_observations && report.contrarian_observations.some(c => c.reasoning_stress_tests) && (
+          <View style={styles.stressTestSection}>
+            <Text style={styles.stressTestTitle}>Questions to Consider</Text>
+            <Text style={styles.stressTestSubtitle}>
+              Before accepting this consensus, consider these challenges to the reasoning:
+            </Text>
+            {report.contrarian_observations.map((contrarian, idx) => {
+              if (!contrarian.reasoning_stress_tests) return null;
+              const tests = contrarian.reasoning_stress_tests;
+              return (
+                <View key={idx}>
+                  <View style={styles.stressTestItem}>
+                    <Text style={styles.stressTestLabel}>What nuance is being lost?</Text>
+                    <Text style={styles.stressTestText}>{tests.lossy_simplification}</Text>
+                  </View>
+                  <View style={styles.stressTestItem}>
+                    <Text style={styles.stressTestLabel}>When does this advice reverse?</Text>
+                    <Text style={styles.stressTestText}>{tests.context_flip}</Text>
+                  </View>
+                  <View style={styles.stressTestItem}>
+                    <Text style={styles.stressTestLabel}>Who wins, who loses?</Text>
+                    <Text style={styles.stressTestText}>{tests.incentive_misalignment}</Text>
+                  </View>
+                  <View style={styles.stressTestItem}>
+                    <Text style={styles.stressTestLabel}>How does initial success fail later?</Text>
+                    <Text style={styles.stressTestText}>{tests.second_order_failure}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {report.dissenting_views && report.dissenting_views.length > 0 && (
           <View style={styles.section}>

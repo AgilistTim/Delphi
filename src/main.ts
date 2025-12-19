@@ -778,6 +778,38 @@ Generate a JSON response with:
     content += `**Support Level:** ${report.consensus_summary.support_level}\n\n`;
     content += `**Confidence Level:** ${report.consensus_summary.confidence_level.toFixed(1)}/10\n\n`;
 
+    // Consensus Classification (if available)
+    if (report.convergence_analysis.consensus_classification) {
+      const cc = report.convergence_analysis.consensus_classification;
+      content += `### Consensus Quality\n\n`;
+      content += `- **Nature:** ${cc.nature.charAt(0).toUpperCase() + cc.nature.slice(1)}\n`;
+      content += `- **Insight Yield:** ${cc.insight_yield.charAt(0).toUpperCase() + cc.insight_yield.slice(1)}\n`;
+      content += `- **Risk:** ${cc.risk_statement}\n\n`;
+    }
+
+    // PROMINENT: Questions to Consider (Stress Tests for Human Reader)
+    if (report.contrarian_observations.length > 0) {
+      const hasStressTests = report.contrarian_observations.some(c => c.reasoning_stress_tests);
+      if (hasStressTests) {
+        content += `## ⚠️ Questions to Consider\n\n`;
+        content += `*Before accepting this consensus, consider these challenges to the reasoning:*\n\n`;
+        
+        report.contrarian_observations.forEach((contrarian) => {
+          if (contrarian.reasoning_stress_tests) {
+            const tests = contrarian.reasoning_stress_tests;
+            content += `### What nuance is being lost?\n`;
+            content += `> ${tests.lossy_simplification}\n\n`;
+            content += `### When does this advice reverse?\n`;
+            content += `> ${tests.context_flip}\n\n`;
+            content += `### Who wins, who loses?\n`;
+            content += `> ${tests.incentive_misalignment}\n\n`;
+            content += `### How does initial success fail later?\n`;
+            content += `> ${tests.second_order_failure}\n\n`;
+          }
+        });
+      }
+    }
+
     // Convergence Analysis
     content += `## 📈 Convergence Analysis\n\n`;
     content += `- **Rounds Completed:** ${report.convergence_analysis.rounds_completed}\n`;
@@ -803,27 +835,36 @@ Generate a JSON response with:
       content += `\n`;
     });
 
-    // Contrarian Observations
+    // Legacy Contrarian Observations (for backward compatibility)
     if (report.contrarian_observations.length > 0) {
-      content += `## 🎯 Contrarian Observations\n\n`;
-      report.contrarian_observations.forEach((contrarian, index) => {
-        content += `### Contrarian Challenge ${index + 1}\n\n`;
-        content += `**Critique:** ${contrarian.critique}\n\n`;
-        content += `**Alternative Framework:** ${contrarian.alternative_framework}\n\n`;
-        content += `**Blind Spots Identified:**\n`;
-        contrarian.blind_spots.forEach(spot => {
-          content += `- ${spot}\n`;
+      const hasLegacyContent = report.contrarian_observations.some(c => c.critique || c.blind_spots?.length);
+      if (hasLegacyContent) {
+        content += `## 🎯 Additional Contrarian Observations\n\n`;
+        report.contrarian_observations.forEach((contrarian, index) => {
+          if (contrarian.critique) {
+            content += `### Observation ${index + 1}\n\n`;
+            content += `**Critique:** ${contrarian.critique}\n\n`;
+          }
+          if (contrarian.alternative_framework) {
+            content += `**Alternative Framework:** ${contrarian.alternative_framework}\n\n`;
+          }
+          if (contrarian.blind_spots && contrarian.blind_spots.length > 0) {
+            content += `**Blind Spots Identified:**\n`;
+            contrarian.blind_spots.forEach(spot => {
+              content += `- ${spot}\n`;
+            });
+            content += `\n`;
+          }
+          
+          if (contrarian.counter_evidence && contrarian.counter_evidence.length > 0) {
+            content += `**Counter-Evidence:**\n`;
+            contrarian.counter_evidence.forEach(evidence => {
+              content += `- [${evidence.title}](${evidence.url}): ${evidence.summary}\n`;
+            });
+            content += `\n`;
+          }
         });
-        content += `\n`;
-        
-        if (contrarian.counter_evidence && contrarian.counter_evidence.length > 0) {
-          content += `**Counter-Evidence:**\n`;
-          contrarian.counter_evidence.forEach(evidence => {
-            content += `- [${evidence.title}](${evidence.url}): ${evidence.summary}\n`;
-          });
-          content += `\n`;
-        }
-      });
+      }
     }
 
     content += `---\n\n`;
@@ -833,80 +874,50 @@ Generate a JSON response with:
   }
 
   /**
-   * Format contrarian challenges as required agenda items for experts to address
-   * This is the key mechanism for injecting designed epistemic conflict into the deliberation
+   * Format contrarian stress tests as required agenda items for experts to address
+   * These are epistemic stress tests that attack reasoning quality, not conclusions
    */
   private formatContrarianChallengesForExperts(contrarianResponses: ContrarianResponse[]): string {
     if (contrarianResponses.length === 0) return '';
 
-    let formatted = `\n---\n## REQUIRED: Address These Challenges\n\n`;
-    formatted += `The following challenges were raised in the previous round. You MUST explicitly address each one in your response - either:\n`;
+    let formatted = `\n---\n## REQUIRED: Address These Reasoning Stress Tests\n\n`;
+    formatted += `The following stress tests challenge the quality of reasoning in the current consensus. You MUST explicitly address each one:\n`;
     formatted += `- Refute with evidence (cite specific sources)\n`;
-    formatted += `- Acknowledge and narrow your claim with conditions\n`;
-    formatted += `- Explicitly dissent and explain why the challenge is valid\n\n`;
+    formatted += `- Acknowledge the limitation and narrow your claim\n`;
+    formatted += `- Explain why this stress test doesn't apply to your position\n\n`;
 
     contrarianResponses.forEach((response, index) => {
-      formatted += `### Challenge ${index + 1}\n\n`;
-      formatted += `**Critique:** ${response.critique}\n\n`;
-      formatted += `**Alternative Framework:** ${response.alternative_framework}\n\n`;
+      // Primary: Use the new reasoning stress tests (verbatim injection)
+      if (response.reasoning_stress_tests) {
+        const tests = response.reasoning_stress_tests;
+        formatted += `### Stress Tests (Set ${index + 1})\n\n`;
+        formatted += `**1. What nuance is being lost?**\n`;
+        formatted += `> ${tests.lossy_simplification}\n\n`;
+        formatted += `**2. When does this advice reverse?**\n`;
+        formatted += `> ${tests.context_flip}\n\n`;
+        formatted += `**3. Who wins, who loses?**\n`;
+        formatted += `> ${tests.incentive_misalignment}\n\n`;
+        formatted += `**4. How does initial success fail later?**\n`;
+        formatted += `> ${tests.second_order_failure}\n\n`;
+      }
       
+      // Legacy: Support old format for backward compatibility
+      if (response.critique) {
+        formatted += `**Legacy Critique:** ${response.critique}\n\n`;
+      }
+      if (response.alternative_framework) {
+        formatted += `**Alternative Framework:** ${response.alternative_framework}\n\n`;
+      }
       if (response.blind_spots && response.blind_spots.length > 0) {
-        formatted += `**Blind Spots Identified:**\n`;
+        formatted += `**Blind Spots:**\n`;
         response.blind_spots.forEach(spot => {
           formatted += `- ${spot}\n`;
         });
         formatted += '\n';
       }
-
-      if (response.counter_evidence && response.counter_evidence.length > 0) {
-        formatted += `**Counter-Evidence:**\n`;
-        response.counter_evidence.forEach(evidence => {
-          formatted += `- ${evidence.title}: ${evidence.summary} (${evidence.url})\n`;
-        });
-        formatted += '\n';
-      }
-
-      if (response.frame_expansion) {
-        const fe = response.frame_expansion;
-        formatted += `### Frame Expansion (MUST ADDRESS)\n\n`;
-        
-        if (fe.steelman_opposite_goal) {
-          formatted += `**Steelman of Opposite Goal:** ${fe.steelman_opposite_goal}\n\n`;
-        }
-        
-        if (fe.failure_modes && fe.failure_modes.length > 0) {
-          formatted += `**Failure Modes to Consider:**\n`;
-          fe.failure_modes.forEach(mode => formatted += `- ${mode}\n`);
-          formatted += '\n';
-        }
-        
-        if (fe.second_order_effects && fe.second_order_effects.length > 0) {
-          formatted += `**Second-Order Effects:**\n`;
-          fe.second_order_effects.forEach(effect => formatted += `- ${effect}\n`);
-          formatted += '\n';
-        }
-        
-        if (fe.stakeholder_inversion && fe.stakeholder_inversion.length > 0) {
-          formatted += `**Stakeholder Inversion (who loses?):**\n`;
-          fe.stakeholder_inversion.forEach(item => formatted += `- ${item}\n`);
-          formatted += '\n';
-        }
-        
-        if (fe.boundary_conditions && fe.boundary_conditions.length > 0) {
-          formatted += `**Boundary Conditions (where advice fails):**\n`;
-          fe.boundary_conditions.forEach(cond => formatted += `- ${cond}\n`);
-          formatted += '\n';
-        }
-        
-        if (fe.metric_traps && fe.metric_traps.length > 0) {
-          formatted += `**Metric Traps:**\n`;
-          fe.metric_traps.forEach(trap => formatted += `- ${trap}\n`);
-          formatted += '\n';
-        }
-      }
     });
 
-    formatted += `---\n\nYour response must demonstrate engagement with these challenges. Ignoring them will be considered a weakness in your analysis.\n`;
+    formatted += `---\n\nYour response must demonstrate engagement with these stress tests. Ignoring them will be considered a weakness in your analysis.\n`;
 
     return formatted;
   }

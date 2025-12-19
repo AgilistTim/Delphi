@@ -134,9 +134,25 @@ Focus on identifying meaningful patterns and groupings. Be objective and accurat
       prompt += `## Contrarian Challenges:\n\n`;
       contrarianResponses.forEach((response, index) => {
         prompt += `### Contrarian ${index + 1}\n`;
-        prompt += `**Critique:** ${response.critique.substring(0, 200)}${response.critique.length > 200 ? '...' : ''}\n`;
-        prompt += `**Alternative Framework:** ${response.alternative_framework.substring(0, 200)}${response.alternative_framework.length > 200 ? '...' : ''}\n`;
-        prompt += `**Blind Spots:** ${response.blind_spots.join(', ')}\n\n`;
+        // Handle new stress test format
+        if (response.reasoning_stress_tests) {
+          const tests = response.reasoning_stress_tests;
+          prompt += `**Stress Tests:**\n`;
+          prompt += `- Lossy Simplification: ${tests.lossy_simplification}\n`;
+          prompt += `- Context Flip: ${tests.context_flip}\n`;
+          prompt += `- Incentive Misalignment: ${tests.incentive_misalignment}\n`;
+          prompt += `- Second-Order Failure: ${tests.second_order_failure}\n\n`;
+        }
+        // Handle legacy format (backward compatibility)
+        if (response.critique) {
+          prompt += `**Critique:** ${response.critique.substring(0, 200)}${response.critique.length > 200 ? '...' : ''}\n`;
+        }
+        if (response.alternative_framework) {
+          prompt += `**Alternative Framework:** ${response.alternative_framework.substring(0, 200)}${response.alternative_framework.length > 200 ? '...' : ''}\n`;
+        }
+        if (response.blind_spots && response.blind_spots.length > 0) {
+          prompt += `**Blind Spots:** ${response.blind_spots.join(', ')}\n\n`;
+        }
       });
     }
 

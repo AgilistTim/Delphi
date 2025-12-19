@@ -78,10 +78,32 @@ export interface ExpertResponse {
   agent_id?: string;
 }
 
+// Reasoning Stress Tests - Four epistemic stress tests (topic-agnostic)
+export interface ReasoningStressTests {
+  lossy_simplification: string;
+  context_flip: string;
+  incentive_misalignment: string;
+  second_order_failure: string;
+}
+
+// Consensus quality classification
+export type ConsensusNature = 'normative' | 'epistemic' | 'mixed';
+export type InsightYield = 'low' | 'medium' | 'high';
+
+export interface ConsensusClassification {
+  nature: ConsensusNature;
+  insight_yield: InsightYield;
+  insight_yield_reasoning: string;
+  risk_statement: string;
+}
+
 export interface ContrarianResponse {
-  critique: string;
-  alternative_framework: string;
-  blind_spots: string[];
+  // NEW: Four epistemic stress tests
+  reasoning_stress_tests?: ReasoningStressTests;
+  // Legacy fields (still supported)
+  critique?: string;
+  alternative_framework?: string;
+  blind_spots?: string[];
   counter_evidence?: Array<{ title: string; url: string; summary: string }>;
   agent_id?: string;
 }
@@ -142,6 +164,8 @@ export interface DelphiReport {
     termination_reason: TerminationReason;
     consensus_type?: ConsensusType;
     consensus_type_reasoning?: string;
+    // NEW: Consensus quality classification for engaging human readers
+    consensus_classification?: ConsensusClassification;
   };
   round_history: RoundSynthesis[];
   round_results?: RoundResult[];

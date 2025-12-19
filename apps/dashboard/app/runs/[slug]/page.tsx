@@ -23,10 +23,25 @@ interface ExpertPosition {
   agent_id?: string;
 }
 
+interface ReasoningStressTests {
+  lossy_simplification: string;
+  context_flip: string;
+  incentive_misalignment: string;
+  second_order_failure: string;
+}
+
+interface ConsensusClassification {
+  nature: 'normative' | 'epistemic' | 'mixed';
+  insight_yield: 'low' | 'medium' | 'high';
+  insight_yield_reasoning: string;
+  risk_statement: string;
+}
+
 interface ContrarianObservation {
-  critique: string;
-  alternative_framework: string;
-  blind_spots: string[];
+  reasoning_stress_tests?: ReasoningStressTests;
+  critique?: string;
+  alternative_framework?: string;
+  blind_spots?: string[];
   counter_evidence?: Source[];
 }
 
@@ -112,6 +127,7 @@ interface DelphiReport {
     termination_reason?: string;
     consensus_type?: 'strong' | 'conditional' | 'operational' | 'divergent';
     consensus_type_reasoning?: string;
+    consensus_classification?: ConsensusClassification;
   };
   expert_positions?: ExpertPosition[];
   expert_personas?: ExpertPersona[];
@@ -341,6 +357,38 @@ export default function RunPage({ params }: RunPageProps) {
                   <CardTitle>Convergence Metrics</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {/* Consensus Classification */}
+                  {report.convergence_analysis?.consensus_classification && (
+                    <div className="mb-4 p-3 rounded-lg bg-gradient-to-r from-slate-50 to-white border border-slate-200">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <span className="text-xs text-slate-500">Consensus Nature</span>
+                          <div className="font-semibold text-slate-900 capitalize">
+                            {report.convergence_analysis.consensus_classification.nature}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-500">Insight Yield</span>
+                          <Badge className={
+                            report.convergence_analysis.consensus_classification.insight_yield === 'high'
+                              ? 'bg-green-100 text-green-700 border-green-200'
+                              : report.convergence_analysis.consensus_classification.insight_yield === 'medium'
+                              ? 'bg-amber-100 text-amber-700 border-amber-200'
+                              : 'bg-red-100 text-red-700 border-red-200'
+                          }>
+                            {report.convergence_analysis.consensus_classification.insight_yield.charAt(0).toUpperCase() + 
+                             report.convergence_analysis.consensus_classification.insight_yield.slice(1)}
+                          </Badge>
+                        </div>
+                        <div>
+                          <span className="text-xs text-slate-500">Risk</span>
+                          <div className="text-sm text-red-600">
+                            {report.convergence_analysis.consensus_classification.risk_statement}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {report.convergence_analysis?.consensus_type && (
                     <div className="mb-4 p-3 rounded-lg bg-gradient-to-r from-slate-50 to-white border border-slate-200">
                       <div className="flex items-center gap-2 mb-2">
@@ -395,6 +443,49 @@ export default function RunPage({ params }: RunPageProps) {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Questions to Consider - Stress Tests (Prominent Section) */}
+            {report.contrarian_observations && report.contrarian_observations.some(c => c.reasoning_stress_tests) && (
+              <Card className="mt-6 border-red-200 bg-gradient-to-r from-red-50 to-orange-50">
+                <CardHeader>
+                  <CardTitle className="text-red-800 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    Questions to Consider
+                  </CardTitle>
+                  <p className="text-sm text-red-600 mt-1">
+                    Before accepting this consensus, consider these challenges to the reasoning:
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {report.contrarian_observations.map((contrarian, idx) => {
+                    if (!contrarian.reasoning_stress_tests) return null;
+                    const tests = contrarian.reasoning_stress_tests;
+                    return (
+                      <div key={idx} className="grid md:grid-cols-2 gap-4">
+                        <div className="p-4 bg-white rounded-lg border border-red-100">
+                          <div className="text-sm font-semibold text-red-800 mb-2">What nuance is being lost?</div>
+                          <p className="text-slate-700">{tests.lossy_simplification}</p>
+                        </div>
+                        <div className="p-4 bg-white rounded-lg border border-red-100">
+                          <div className="text-sm font-semibold text-red-800 mb-2">When does this advice reverse?</div>
+                          <p className="text-slate-700">{tests.context_flip}</p>
+                        </div>
+                        <div className="p-4 bg-white rounded-lg border border-red-100">
+                          <div className="text-sm font-semibold text-red-800 mb-2">Who wins, who loses?</div>
+                          <p className="text-slate-700">{tests.incentive_misalignment}</p>
+                        </div>
+                        <div className="p-4 bg-white rounded-lg border border-red-100">
+                          <div className="text-sm font-semibold text-red-800 mb-2">How does initial success fail later?</div>
+                          <p className="text-slate-700">{tests.second_order_failure}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
 
             {/* Key Evidence */}
             {report.consensus_summary?.key_evidence && report.consensus_summary.key_evidence.length > 0 && (
