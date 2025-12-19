@@ -141,6 +141,14 @@ export interface RegimeSplitAnalysis {
   closing_statement: string;
 }
 
+// 12-Month Reality Check - anchors regimes in observable near-term signals
+// Turns philosophical dilemma into monitorable decision
+export interface RegimeSignals {
+  consensus_signals: string[];
+  oppositional_signals: string[];
+  intro_statement: string;
+}
+
 export interface ContrarianResponse {
   // NEW: Four epistemic stress tests
   reasoning_stress_tests?: ReasoningStressTests;
@@ -219,6 +227,7 @@ export interface DelphiReport {
   assumption_exposures?: AssumptionExposure[];
   decision_fork?: DecisionFork;
   regime_split?: RegimeSplitAnalysis;
+  regime_signals?: RegimeSignals;
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }

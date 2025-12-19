@@ -72,6 +72,12 @@ interface RegimeSplitAnalysis {
   closing_statement: string;
 }
 
+interface RegimeSignals {
+  consensus_signals: string[];
+  oppositional_signals: string[];
+  intro_statement: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   critique?: string;
@@ -175,6 +181,7 @@ interface DelphiReport {
   assumption_exposures?: AssumptionExposure[];
   decision_fork?: DecisionFork;
   regime_split?: RegimeSplitAnalysis;
+  regime_signals?: RegimeSignals;
 }
 
 interface RunPageProps {
@@ -643,6 +650,43 @@ export default function RunPage({ params }: RunPageProps) {
                   <p className="text-center text-sky-900 font-semibold mt-4">
                     {report.regime_split.closing_statement}
                   </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 12-Month Reality Check - Anchors Regimes in Observable Near-Term Signals */}
+            {report.regime_signals && (
+              <Card className="mt-6 border-green-300 bg-gradient-to-r from-green-50 to-emerald-50">
+                <CardHeader>
+                  <CardTitle className="text-green-900 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    12-Month Reality Check
+                  </CardTitle>
+                  <p className="text-sm text-green-700 mt-1">
+                    {report.regime_signals.intro_statement}
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-white rounded-lg border border-green-200">
+                      <div className="text-sm font-bold text-green-900 mb-3">Signals Regime A (Consensus World) is unfolding</div>
+                      <div className="space-y-2">
+                        {report.regime_signals.consensus_signals.map((signal, idx) => (
+                          <p key={idx} className="text-sm text-slate-700">{idx + 1}. {signal}</p>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border border-green-200">
+                      <div className="text-sm font-bold text-green-900 mb-3">Signals Regime B (Oppositional World) is unfolding</div>
+                      <div className="space-y-2">
+                        {report.regime_signals.oppositional_signals.map((signal, idx) => (
+                          <p key={idx} className="text-sm text-slate-700">{idx + 1}. {signal}</p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             )}

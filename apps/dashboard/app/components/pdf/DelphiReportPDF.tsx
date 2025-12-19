@@ -462,6 +462,40 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  realityCheckSection: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#16a34a',
+  },
+  realityCheckTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#14532d',
+  },
+  realityCheckSubtitle: {
+    fontSize: 9,
+    fontStyle: 'italic',
+    color: '#166534',
+    marginBottom: 12,
+  },
+  realityCheckRegimeTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#14532d',
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  realityCheckSignal: {
+    fontSize: 10,
+    color: '#15803d',
+    marginBottom: 4,
+    paddingLeft: 8,
+    lineHeight: 1.4,
+  },
 });
 
 interface Source {
@@ -565,6 +599,12 @@ interface RegimeSplitAnalysis {
   closing_statement: string;
 }
 
+interface RegimeSignals {
+  consensus_signals: string[];
+  oppositional_signals: string[];
+  intro_statement: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   challenge?: string;
@@ -611,6 +651,7 @@ interface DelphiReportData {
   assumption_exposures?: AssumptionExposure[];
   decision_fork?: DecisionFork;
   regime_split?: RegimeSplitAnalysis;
+  regime_signals?: RegimeSignals;
 }
 
 interface DelphiReportPDFProps {
@@ -893,6 +934,23 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
               </Text>
             </View>
             <Text style={styles.regimeClosing}>{report.regime_split.closing_statement}</Text>
+          </View>
+        )}
+
+        {report.regime_signals && (
+          <View style={styles.realityCheckSection}>
+            <Text style={styles.realityCheckTitle}>12-Month Reality Check</Text>
+            <Text style={styles.realityCheckSubtitle}>
+              {report.regime_signals.intro_statement}
+            </Text>
+            <Text style={styles.realityCheckRegimeTitle}>Signals Regime A (Consensus World) is unfolding</Text>
+            {report.regime_signals.consensus_signals.map((signal, idx) => (
+              <Text key={idx} style={styles.realityCheckSignal}>{idx + 1}. {signal}</Text>
+            ))}
+            <Text style={styles.realityCheckRegimeTitle}>Signals Regime B (Oppositional World) is unfolding</Text>
+            {report.regime_signals.oppositional_signals.map((signal, idx) => (
+              <Text key={idx} style={styles.realityCheckSignal}>{idx + 1}. {signal}</Text>
+            ))}
           </View>
         )}
 
