@@ -408,6 +408,60 @@ const styles = StyleSheet.create({
     color: '#92400e',
     marginTop: 8,
   },
+  regimeSplitSection: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#0284c7',
+  },
+  regimeSplitTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#0c4a6e',
+  },
+  regimeSplitSubtitle: {
+    fontSize: 9,
+    fontStyle: 'italic',
+    color: '#0369a1',
+    marginBottom: 12,
+  },
+  regimeBlock: {
+    marginBottom: 12,
+    padding: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 4,
+  },
+  regimeTitle: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#0c4a6e',
+    marginBottom: 6,
+  },
+  regimeCondition: {
+    fontSize: 9,
+    fontStyle: 'italic',
+    color: '#0369a1',
+    marginBottom: 6,
+  },
+  regimeItem: {
+    fontSize: 10,
+    color: '#1e3a5f',
+    marginBottom: 4,
+    lineHeight: 1.4,
+  },
+  regimeItemLabel: {
+    fontWeight: 'bold',
+  },
+  regimeClosing: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#0c4a6e',
+    marginTop: 8,
+    textAlign: 'center',
+  },
 });
 
 interface Source {
@@ -499,6 +553,18 @@ interface DecisionFork {
   concrete_risks: string[];
 }
 
+interface RegimeDescription {
+  scarce_resource: string;
+  winning_organization: string;
+  failure_mode: string;
+}
+
+interface RegimeSplitAnalysis {
+  consensus_regime: RegimeDescription;
+  oppositional_regime: RegimeDescription;
+  closing_statement: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   challenge?: string;
@@ -544,6 +610,7 @@ interface DelphiReportData {
   oppositional_case?: OppositionalCase;
   assumption_exposures?: AssumptionExposure[];
   decision_fork?: DecisionFork;
+  regime_split?: RegimeSplitAnalysis;
 }
 
 interface DelphiReportPDFProps {
@@ -782,8 +849,50 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
               <Text key={idx} style={styles.decisionForkRisk}>{idx + 1}. {risk}</Text>
             ))}
             <Text style={styles.decisionForkFooter}>
-              You are not answering this. The system is not answering this. You must answer it yourself.
+              This report will not answer this. The system will not answer it. You must answer it yourself.
             </Text>
+          </View>
+        )}
+
+        {report.regime_split && (
+          <View style={styles.regimeSplitSection}>
+            <Text style={styles.regimeSplitTitle}>Competing Regimes</Text>
+            <Text style={styles.regimeSplitSubtitle}>
+              Two explicit futures - which regime are you preparing for?
+            </Text>
+            <View style={styles.regimeBlock}>
+              <Text style={styles.regimeTitle}>Regime A — Consensus World</Text>
+              <Text style={styles.regimeCondition}>If the dominant conclusion is correct:</Text>
+              <Text style={styles.regimeItem}>
+                <Text style={styles.regimeItemLabel}>What becomes scarce: </Text>
+                {report.regime_split.consensus_regime.scarce_resource}
+              </Text>
+              <Text style={styles.regimeItem}>
+                <Text style={styles.regimeItemLabel}>What kind of organization wins: </Text>
+                {report.regime_split.consensus_regime.winning_organization}
+              </Text>
+              <Text style={styles.regimeItem}>
+                <Text style={styles.regimeItemLabel}>What failure looks like: </Text>
+                {report.regime_split.consensus_regime.failure_mode}
+              </Text>
+            </View>
+            <View style={styles.regimeBlock}>
+              <Text style={styles.regimeTitle}>Regime B — Oppositional World</Text>
+              <Text style={styles.regimeCondition}>If the contrarian is correct:</Text>
+              <Text style={styles.regimeItem}>
+                <Text style={styles.regimeItemLabel}>What becomes scarce: </Text>
+                {report.regime_split.oppositional_regime.scarce_resource}
+              </Text>
+              <Text style={styles.regimeItem}>
+                <Text style={styles.regimeItemLabel}>What kind of organization wins: </Text>
+                {report.regime_split.oppositional_regime.winning_organization}
+              </Text>
+              <Text style={styles.regimeItem}>
+                <Text style={styles.regimeItemLabel}>What failure looks like: </Text>
+                {report.regime_split.oppositional_regime.failure_mode}
+              </Text>
+            </View>
+            <Text style={styles.regimeClosing}>{report.regime_split.closing_statement}</Text>
           </View>
         )}
 

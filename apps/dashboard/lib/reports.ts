@@ -127,6 +127,20 @@ export interface DecisionFork {
   concrete_risks: string[];
 }
 
+// Regime Split Analysis - maps two explicit futures for world-model choice
+// Forces reader to confront which regime they believe they are entering
+export interface RegimeDescription {
+  scarce_resource: string;
+  winning_organization: string;
+  failure_mode: string;
+}
+
+export interface RegimeSplitAnalysis {
+  consensus_regime: RegimeDescription;
+  oppositional_regime: RegimeDescription;
+  closing_statement: string;
+}
+
 export interface ContrarianResponse {
   // NEW: Four epistemic stress tests
   reasoning_stress_tests?: ReasoningStressTests;
@@ -204,6 +218,7 @@ export interface DelphiReport {
   oppositional_case?: OppositionalCase;
   assumption_exposures?: AssumptionExposure[];
   decision_fork?: DecisionFork;
+  regime_split?: RegimeSplitAnalysis;
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }

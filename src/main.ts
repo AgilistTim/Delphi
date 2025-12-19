@@ -27,6 +27,7 @@ import {
   OppositionalCase,
   AssumptionExposure,
   DecisionFork,
+  RegimeSplitAnalysis,
   ConvergenceMetrics
 } from './types/index.js';
 
@@ -575,6 +576,10 @@ export class DelphiAgent {
     // Forces reader to acknowledge what they're choosing to risk - NOT new analysis
     const decisionFork = this.generateDecisionFork(oppositionalCase, counterfactualRisk);
 
+    // Generate regime split analysis (runs AFTER decision fork, as the final cognitive step)
+    // Maps two explicit futures - forces reader to confront which regime they believe they are entering
+    const regimeSplit = await this.generateRegimeSplitAnalysis(consensusSummary, oppositionalCase);
+
     // Map personas to expert_personas format with agent_id linkage
     const expertPersonas = personas.map((persona, index) => ({
       name: persona.name,
@@ -620,6 +625,7 @@ export class DelphiAgent {
       oppositional_case: oppositionalCase,
       assumption_exposures: assumptionExposures,
       decision_fork: decisionFork,
+      regime_split: regimeSplit,
       generated_at: new Date(),
       failed_experts: failedExperts
     } as any;
@@ -1071,6 +1077,120 @@ Be direct. State what must be true for the consensus to hold - and therefore wha
   }
 
   /**
+   * Generate Regime Split Analysis - maps two explicit futures for world-model choice
+   * Runs AFTER decision fork, as the final cognitive step
+   * Forces reader to confront which regime they believe they are entering
+   * No judgement, no resolution, no recommendation - just a map
+   */
+  private async generateRegimeSplitAnalysis(
+    consensusSummary: { final_position: string; confidence_level: number },
+    oppositionalCase: OppositionalCase
+  ): Promise<RegimeSplitAnalysis> {
+    console.log(`\n🔀 Generating regime split analysis...`);
+
+    const prompt = `You are mapping two competing futures. Your job is to describe what each world looks like - NOT to judge which is more likely.
+
+CONSENSUS POSITION (Regime A):
+"${consensusSummary.final_position}"
+
+OPPOSITIONAL POSITION (Regime B):
+"${oppositionalCase.opposite_position}"
+
+Argument for Regime B: "${oppositionalCase.argument}"
+
+YOUR TASK:
+For EACH regime, describe three things:
+1. What becomes the SCARCE RESOURCE in this world (what's hard to get, what's valuable)
+2. What kind of ORGANIZATION WINS in this world (what traits, structures, or strategies succeed)
+3. What FAILURE looks like in this world (what happens to those who bet wrong)
+
+Generate your response in JSON format:
+
+{
+  "consensus_regime": {
+    "scarce_resource": "What becomes scarce if the consensus is correct (one sentence)",
+    "winning_organization": "What kind of organization wins if the consensus is correct (one sentence)",
+    "failure_mode": "What failure looks like for those who bet against the consensus (one sentence)"
+  },
+  "oppositional_regime": {
+    "scarce_resource": "What becomes scarce if the oppositional case is correct (one sentence)",
+    "winning_organization": "What kind of organization wins if the oppositional case is correct (one sentence)",
+    "failure_mode": "What failure looks like for those who bet against the oppositional case (one sentence)"
+  }
+}
+
+RULES:
+- Be concrete and specific, not abstract
+- Each answer must be ONE sentence
+- Do NOT judge which regime is more likely
+- Do NOT recommend which to prepare for
+- Do NOT hedge with "may" or "might"
+- Do NOT use phrases like "it depends" or "both could be true"
+- Describe each world as if it IS the future`;
+
+    try {
+      const completion = await safeChatCompletion(this.openai, {
+        model: this.config.openai.model,
+        messages: [
+          { role: 'system', content: 'You are a strategic scenario planner. Your job is to describe competing futures without judging which is more likely. You never recommend, hedge, or reconcile. You describe each world as if it IS the future.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          const jsonString = jsonMatch ? jsonMatch[0] : content;
+          const parsed = JSON.parse(jsonString);
+          
+          console.log(`   ✅ Regime split analysis generated`);
+          return {
+            consensus_regime: {
+              scarce_resource: parsed.consensus_regime?.scarce_resource || 'Resource unavailable',
+              winning_organization: parsed.consensus_regime?.winning_organization || 'Organization type unavailable',
+              failure_mode: parsed.consensus_regime?.failure_mode || 'Failure mode unavailable'
+            },
+            oppositional_regime: {
+              scarce_resource: parsed.oppositional_regime?.scarce_resource || 'Resource unavailable',
+              winning_organization: parsed.oppositional_regime?.winning_organization || 'Organization type unavailable',
+              failure_mode: parsed.oppositional_regime?.failure_mode || 'Failure mode unavailable'
+            },
+            closing_statement: 'This decision is about which regime you believe you are entering.'
+          };
+        } catch {
+          console.warn('   ⚠️ Failed to parse regime split JSON, using fallback');
+        }
+      }
+    } catch (error) {
+      console.error('Regime split analysis generation failed:', error);
+    }
+
+    return this.generateFallbackRegimeSplit();
+  }
+
+  /**
+   * Generate fallback regime split when AI generation fails
+   */
+  private generateFallbackRegimeSplit(): RegimeSplitAnalysis {
+    return {
+      consensus_regime: {
+        scarce_resource: 'The ability to integrate new approaches with existing systems and people becomes the bottleneck.',
+        winning_organization: 'Organizations that balance innovation with stability, maintaining institutional knowledge while adapting.',
+        failure_mode: 'Those who move too fast lose institutional coherence; those who move too slow lose competitive position.'
+      },
+      oppositional_regime: {
+        scarce_resource: 'Speed of transformation becomes the bottleneck - the ability to abandon legacy approaches entirely.',
+        winning_organization: 'Organizations that can rebuild from scratch without the drag of existing commitments.',
+        failure_mode: 'Those who try to preserve the old while adopting the new get outcompeted by pure-play alternatives.'
+      },
+      closing_statement: 'This decision is about which regime you believe you are entering.'
+    };
+  }
+
+  /**
    * Save the report to file
    */
   private async saveReport(report: DelphiReport): Promise<void> {
@@ -1196,7 +1316,29 @@ Be direct. State what must be true for the consensus to hold - and therefore wha
       report.decision_fork.concrete_risks.forEach((risk, idx) => {
         content += `${idx + 1}. ${risk}\n\n`;
       });
-      content += `*You are not answering this. The system is not answering this. You must answer it yourself.*\n\n`;
+      content += `*This report will not answer this. The system will not answer it. You must answer it yourself.*\n\n`;
+    }
+
+    // REGIME SPLIT: Maps two explicit futures for world-model choice
+    if (report.regime_split) {
+      const rs = report.regime_split;
+      content += `## 🔀 Competing Regimes\n\n`;
+      content += `*Two explicit futures - which regime are you preparing for?*\n\n`;
+      
+      content += `### Regime A — Consensus World\n`;
+      content += `*If the dominant conclusion is correct:*\n\n`;
+      content += `- **What becomes scarce:** ${rs.consensus_regime.scarce_resource}\n`;
+      content += `- **What kind of organization wins:** ${rs.consensus_regime.winning_organization}\n`;
+      content += `- **What failure looks like:** ${rs.consensus_regime.failure_mode}\n\n`;
+      
+      content += `### Regime B — Oppositional World\n`;
+      content += `*If the contrarian is correct:*\n\n`;
+      content += `- **What becomes scarce:** ${rs.oppositional_regime.scarce_resource}\n`;
+      content += `- **What kind of organization wins:** ${rs.oppositional_regime.winning_organization}\n`;
+      content += `- **What failure looks like:** ${rs.oppositional_regime.failure_mode}\n\n`;
+      
+      content += `---\n\n`;
+      content += `**${rs.closing_statement}**\n\n`;
     }
 
     // PROMINENT: Questions to Consider (Stress Tests for Human Reader)
