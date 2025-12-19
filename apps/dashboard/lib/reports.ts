@@ -120,6 +120,13 @@ export interface AssumptionExposure {
   failed_assumption: string;
 }
 
+// Decision Fork - forces reader to acknowledge what they're choosing to risk
+// This is NOT new analysis - it extracts risks already implied by the report
+export interface DecisionFork {
+  prompt: string;
+  concrete_risks: string[];
+}
+
 export interface ContrarianResponse {
   // NEW: Four epistemic stress tests
   reasoning_stress_tests?: ReasoningStressTests;
@@ -196,6 +203,7 @@ export interface DelphiReport {
   counterfactual_risk?: CounterfactualRiskAnalysis;
   oppositional_case?: OppositionalCase;
   assumption_exposures?: AssumptionExposure[];
+  decision_fork?: DecisionFork;
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }

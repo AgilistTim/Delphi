@@ -26,6 +26,7 @@ import {
   CounterfactualRiskAnalysis,
   OppositionalCase,
   AssumptionExposure,
+  DecisionFork,
   ConvergenceMetrics
 } from './types/index.js';
 
@@ -570,6 +571,10 @@ export class DelphiAgent {
       finalRound.expertResponses
     );
 
+    // Generate decision fork (runs AFTER assumption exposures, BEFORE PDF assembly)
+    // Forces reader to acknowledge what they're choosing to risk - NOT new analysis
+    const decisionFork = this.generateDecisionFork(oppositionalCase, counterfactualRisk);
+
     // Map personas to expert_personas format with agent_id linkage
     const expertPersonas = personas.map((persona, index) => ({
       name: persona.name,
@@ -614,6 +619,7 @@ export class DelphiAgent {
       counterfactual_risk: counterfactualRisk,
       oppositional_case: oppositionalCase,
       assumption_exposures: assumptionExposures,
+      decision_fork: decisionFork,
       generated_at: new Date(),
       failed_experts: failedExperts
     } as any;
@@ -1023,6 +1029,48 @@ Be direct. State what must be true for the consensus to hold - and therefore wha
   }
 
   /**
+   * Generate Decision Fork - forces reader to acknowledge what they're choosing to risk
+   * This is NOT new analysis - it extracts risks already implied by the report
+   * The system does not answer this - it forces the READER to answer
+   * Runs AFTER assumption exposures, BEFORE PDF assembly
+   * Token cost: minimal (extraction, not generation)
+   */
+  private generateDecisionFork(
+    oppositionalCase: OppositionalCase | undefined,
+    counterfactualRisk: CounterfactualRiskAnalysis | undefined
+  ): DecisionFork {
+    const concreteRisks: string[] = [];
+
+    if (oppositionalCase) {
+      if (oppositionalCase.outperformance_scenario) {
+        concreteRisks.push(oppositionalCase.outperformance_scenario);
+      }
+      if (oppositionalCase.uncomfortable_implication) {
+        concreteRisks.push(oppositionalCase.uncomfortable_implication);
+      }
+    }
+
+    if (counterfactualRisk) {
+      if (counterfactualRisk.plausible_failure) {
+        concreteRisks.push(counterfactualRisk.plausible_failure);
+      }
+    }
+
+    if (concreteRisks.length === 0) {
+      concreteRisks.push(
+        'The conditions that produced this consensus may not persist',
+        'First-mover advantage may go to those who act on the opposite assumption',
+        'Organisational inertia may delay necessary adaptation'
+      );
+    }
+
+    return {
+      prompt: 'If the oppositional case is correct, what are you choosing to risk by following the consensus?',
+      concrete_risks: concreteRisks.slice(0, 3)
+    };
+  }
+
+  /**
    * Save the report to file
    */
   private async saveReport(report: DelphiReport): Promise<void> {
@@ -1139,6 +1187,16 @@ Be direct. State what must be true for the consensus to hold - and therefore wha
       report.assumption_exposures.forEach((ae) => {
         content += `**${ae.expert_label}:** ${ae.failed_assumption}\n\n`;
       });
+    }
+
+    // DECISION FORK: Forces reader to acknowledge what they're choosing to risk
+    if (report.decision_fork) {
+      content += `## ⚖️ Decision Fork (Explicit Acknowledgement Required)\n\n`;
+      content += `**${report.decision_fork.prompt}**\n\n`;
+      report.decision_fork.concrete_risks.forEach((risk, idx) => {
+        content += `${idx + 1}. ${risk}\n\n`;
+      });
+      content += `*You are not answering this. The system is not answering this. You must answer it yourself.*\n\n`;
     }
 
     // PROMINENT: Questions to Consider (Stress Tests for Human Reader)
