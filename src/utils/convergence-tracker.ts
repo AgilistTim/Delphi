@@ -1,4 +1,4 @@
-import { ExpertResponse, RoundSynthesis, ConvergenceMetrics, Citation, ConsensusType } from '../types/index.js';
+import { ExpertResponse, RoundSynthesis, ConvergenceMetrics, Citation, ConsensusType, ConsensusClassification, ConsensusNature, InsightYield } from '../types/index.js';
 
 export class ConvergenceTracker {
   private roundHistory: RoundSynthesis[] = [];
@@ -38,6 +38,12 @@ export class ConvergenceTracker {
       confidenceSpread,
       consensusClarity
     );
+    
+    const consensusClassification = this.classifyConsensusQuality(
+      consensusClarity,
+      disagreementIndex,
+      citationOverlap
+    );
 
     return {
       position_stability: positionStability,
@@ -49,8 +55,140 @@ export class ConvergenceTracker {
       rounds_completed: this.roundHistory.length,
       termination_reason: terminationReason,
       consensus_type: consensusType,
-      consensus_type_reasoning: reasoning
+      consensus_type_reasoning: reasoning,
+      consensus_classification: consensusClassification
     };
+  }
+
+  /**
+   * Classify consensus quality for human reader engagement
+   * Determines if consensus is normative (values) vs epistemic (facts)
+   * and assesses insight yield and risk
+   */
+  private classifyConsensusQuality(
+    consensusClarity: number,
+    disagreementIndex: number,
+    citationOverlap: number
+  ): ConsensusClassification {
+    const nature = this.determineConsensusNature();
+    const { insightYield, reasoning } = this.assessInsightYield(
+      consensusClarity,
+      disagreementIndex,
+      citationOverlap
+    );
+    const riskStatement = this.generateRiskStatement(nature, insightYield, consensusClarity);
+
+    return {
+      nature,
+      insight_yield: insightYield,
+      insight_yield_reasoning: reasoning,
+      risk_statement: riskStatement
+    };
+  }
+
+  /**
+   * Determine if consensus is normative (values/preferences) or epistemic (facts/analysis)
+   * Normative consensus tends to have lower insight yield
+   */
+  private determineConsensusNature(): ConsensusNature {
+    if (this.roundHistory.length === 0) return 'mixed';
+
+    const currentRound = this.roundHistory[this.roundHistory.length - 1];
+    
+    const normativeIndicators = [
+      'should', 'ought', 'must', 'better', 'worse', 'right', 'wrong',
+      'ethical', 'moral', 'fair', 'unfair', 'value', 'principle'
+    ];
+    const epistemicIndicators = [
+      'evidence', 'data', 'research', 'study', 'analysis', 'finding',
+      'measure', 'statistic', 'correlation', 'causation', 'empirical'
+    ];
+
+    let normativeCount = 0;
+    let epistemicCount = 0;
+
+    const allText = [
+      ...currentRound.consensus_areas,
+      ...currentRound.divergence_areas,
+      ...currentRound.key_insights
+    ].join(' ').toLowerCase();
+
+    normativeIndicators.forEach(indicator => {
+      if (allText.includes(indicator)) normativeCount++;
+    });
+    epistemicIndicators.forEach(indicator => {
+      if (allText.includes(indicator)) epistemicCount++;
+    });
+
+    if (normativeCount > epistemicCount * 1.5) return 'normative';
+    if (epistemicCount > normativeCount * 1.5) return 'epistemic';
+    return 'mixed';
+  }
+
+  /**
+   * Assess how much novel insight emerged from the deliberation
+   */
+  private assessInsightYield(
+    consensusClarity: number,
+    disagreementIndex: number,
+    citationOverlap: number
+  ): { insightYield: InsightYield; reasoning: string } {
+    const hasConditionals = this.detectConditionalFactors();
+    const roundCount = this.roundHistory.length;
+    
+    if (consensusClarity > 0.85 && disagreementIndex < 0.2 && !hasConditionals) {
+      return {
+        insightYield: 'low',
+        reasoning: `High agreement (${(consensusClarity * 100).toFixed(0)}%) with minimal trade-off tension suggests obvious or uncontroversial conclusions.`
+      };
+    }
+    
+    if (disagreementIndex > 0.5 || (hasConditionals && roundCount >= 2)) {
+      return {
+        insightYield: 'high',
+        reasoning: `Significant deliberation occurred with ${hasConditionals ? 'context-dependent conclusions' : 'persistent diverse viewpoints'}. Novel insights likely emerged from the tension.`
+      };
+    }
+    
+    // High citation overlap with moderate consensus suggests experts found common evidence
+    if (citationOverlap > 0.6 && consensusClarity > 0.5) {
+      return {
+        insightYield: 'medium',
+        reasoning: `Moderate consensus (${(consensusClarity * 100).toFixed(0)}%) with strong evidence overlap (${(citationOverlap * 100).toFixed(0)}%). Experts converged on similar sources.`
+      };
+    }
+    
+    return {
+      insightYield: 'medium',
+      reasoning: `Moderate consensus (${(consensusClarity * 100).toFixed(0)}%) with some divergence. Useful synthesis but limited novel insight.`
+    };
+  }
+
+  /**
+   * Generate a risk statement for the human reader
+   */
+  private generateRiskStatement(
+    nature: ConsensusNature,
+    insightYield: InsightYield,
+    consensusClarity: number
+  ): string {
+    if (nature === 'normative' && insightYield === 'low') {
+      return 'False confidence through obvious truths - consensus may reflect shared values rather than rigorous analysis';
+    }
+    
+    if (consensusClarity > 0.9 && insightYield === 'low') {
+      return 'Premature convergence risk - high agreement may indicate groupthink or insufficiently challenged assumptions';
+    }
+    
+    if (nature === 'epistemic' && insightYield === 'high') {
+      return 'Strong epistemic foundation - conclusions are well-supported but should still be stress-tested against edge cases';
+    }
+    
+    if (insightYield === 'medium') {
+      return 'Moderate confidence warranted - useful synthesis but consider boundary conditions where conclusions may not hold';
+    }
+    
+    return 'Review stress tests carefully - consensus quality varies across different aspects of the question';
   }
 
   /**
@@ -405,4 +543,4 @@ export class ConvergenceTracker {
   getExpertEvolution(): Map<string, ExpertResponse[]> {
     return new Map(this.expertHistories);
   }
-}        
+}                                                                

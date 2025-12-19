@@ -74,7 +74,7 @@ export const AssumptionValidationSchema = z.object({
   reasoning: z.string()
 });
 
-// Frame Expansion Schema (6 dimensions for contrarian)
+// Frame Expansion Schema (6 dimensions for contrarian) - DEPRECATED: use ReasoningStressTests
 export const FrameExpansionSchema = z.object({
   steelman_opposite_goal: z.string().min(20, "Steelman of opposite goal required"),
   failure_modes: z.array(z.string()).min(1, "At least one failure mode required"),
@@ -84,11 +84,30 @@ export const FrameExpansionSchema = z.object({
   metric_traps: z.array(z.string()).min(1, "At least one metric trap required")
 });
 
+// Reasoning Stress Tests Schema - Four epistemic stress tests (topic-agnostic)
+// Each test is a short, provocative statement (≤15 words, no hedging)
+export const ReasoningStressTestsSchema = z.object({
+  // "What is being smoothed over or averaged away?"
+  lossy_simplification: z.string().max(100, "Must be ≤15 words"),
+  // "In what plausible context does this advice reverse?"
+  context_flip: z.string().max(100, "Must be ≤15 words"),
+  // "Who benefits if this advice is followed — and who quietly loses?"
+  incentive_misalignment: z.string().max(100, "Must be ≤15 words"),
+  // "If this works initially, how does it fail later?"
+  second_order_failure: z.string().max(100, "Must be ≤15 words")
+});
+
+export type ReasoningStressTests = z.infer<typeof ReasoningStressTestsSchema>;
+
 // Contrarian Response Schema
 export const ContrarianResponseSchema = z.object({
-  critique: z.string().min(50, "Critique must be at least 50 characters"),
-  alternative_framework: z.string().min(30, "Alternative framework required"),
-  blind_spots: z.array(z.string()).min(1, "At least one blind spot required"),
+  // NEW: Four epistemic stress tests - short, provocative, topic-agnostic
+  // These attack reasoning quality, not conclusions
+  reasoning_stress_tests: ReasoningStressTestsSchema,
+  // Legacy fields (still supported for backward compatibility)
+  critique: z.string().min(10, "Critique required").optional(),
+  alternative_framework: z.string().min(10, "Alternative framework").optional(),
+  blind_spots: z.array(z.string()).optional(),
   counter_evidence: z.array(z.object({
     title: z.string(),
     url: z.string().url(),
@@ -146,6 +165,22 @@ export type ConsensusType =
   | 'operational'   // Practical agreement despite theoretical differences
   | 'divergent';    // Legitimate, stable disagreement that should be preserved
 
+// Epistemic vs Normative consensus classification
+// Normative = agreement on values/preferences (low insight yield)
+// Epistemic = agreement on facts/analysis (higher insight yield)
+export type ConsensusNature = 'normative' | 'epistemic' | 'mixed';
+
+// Insight yield classification - how much novel thinking emerged
+export type InsightYield = 'low' | 'medium' | 'high';
+
+// Consensus quality assessment for the final report
+export interface ConsensusClassification {
+  nature: ConsensusNature; // Is this normative (values) or epistemic (facts)?
+  insight_yield: InsightYield; // How much novel insight emerged?
+  insight_yield_reasoning: string; // Why this classification?
+  risk_statement: string; // e.g., "False confidence through obvious truths"
+}
+
 // Convergence Metrics
 export interface ConvergenceMetrics {
   position_stability: number; // 0-1, how many experts changed positions
@@ -158,6 +193,8 @@ export interface ConvergenceMetrics {
   termination_reason: 'consensus_reached' | 'max_rounds' | 'divergence_stable';
   consensus_type: ConsensusType; // Four-tier classification
   consensus_type_reasoning: string; // Explanation for the classification
+  // NEW: Consensus quality classification for engaging human readers
+  consensus_classification?: ConsensusClassification;
 }
 
 // Expert Persona Details (for PDF export)
@@ -314,4 +351,4 @@ export interface CostSummary {
   breakdown_by_round: Record<number, TokenUsage>;
   perplexity_calls: number;
   openai_calls: number;
-}                                                                                    
+}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        

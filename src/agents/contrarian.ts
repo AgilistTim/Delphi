@@ -1,28 +1,29 @@
 import OpenAI from 'openai';
 import { safeChatCompletion } from '../utils/openai-helpers.js';
 import { PerplexityTool } from '../tools/perplexity.js';
-import { ContrarianResponse, ContrarianResponseSchema, RoundSynthesis } from '../types/index.js';
+import { ContrarianResponse, ContrarianResponseSchema, RoundSynthesis, ReasoningStressTests } from '../types/index.js';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
-import { sanitizeCitations } from '../utils/citation-sanitize.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Forbidden hedging words that indicate weak stress tests
+const FORBIDDEN_HEDGES = ['might', 'could', 'perhaps', 'possibly', 'maybe', 'potentially'];
+const MAX_WORDS_PER_TEST = 15;
+
 export class ContrarianAgent {
   private openai: OpenAI;
-  private perplexity: PerplexityTool;
   private agentId: string;
   private promptTemplate: string;
 
   constructor(
     openaiClient: OpenAI,
-    perplexityTool: PerplexityTool
+    _perplexityTool: PerplexityTool // Kept in signature for backward compatibility
   ) {
     this.openai = openaiClient;
-    this.perplexity = perplexityTool;
     this.agentId = uuidv4();
     
     // Load prompt template
@@ -33,7 +34,8 @@ export class ContrarianAgent {
   }
 
   /**
-   * Generate contrarian response to challenge emerging consensus
+   * Generate epistemic stress tests to challenge reasoning quality
+   * Returns four short, provocative statements that attack reasoning, not conclusions
    */
   async generateResponse(
     synthesis: RoundSynthesis,
@@ -45,140 +47,127 @@ export class ContrarianAgent {
       
       const systemPrompt = this.promptTemplate
         .replace('{{SYNTHESIS_CONTEXT}}', synthesisContext)
-        .replace('{{AGENT_ID}}', this.agentId);
+        .replace(/\{\{AGENT_ID\}\}/g, this.agentId);
 
-      const userMessage = `Challenge the emerging consensus in this synthesis. Focus on the dominant viewpoints and identify their weaknesses, blind spots, and alternative interpretations. Be constructively critical and provide counter-evidence where possible.`;
+      const userMessage = `Generate exactly four epistemic stress tests for the reasoning in this synthesis. Each test must be ≤15 words, with no hedging language. Return valid JSON.`;
 
-      // 1. Generate critique/alternative using OpenAI (no tool calls)
-      const critiqueCompletion = await safeChatCompletion(this.openai, {
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage + '\n\nFirst, summarize your critique and alternative framework. Do not cite sources yet.' }
-        ],
-        temperature: 0.8,
-        max_tokens: 600
-      });
-      const critiqueContext = critiqueCompletion.choices[0]?.message?.content || '';
-
-      // 2. Now allow tool call for counter-evidence/citations if needed
-      const contrarianPrompt = userMessage + `\n\nYour critique/alternative:\n${critiqueContext}\n\nIf you need to cite counter-evidence or require web/academic/recent research, use the search_counter_evidence tool.`;
-
-      const searchFunction = {
-        type: 'function' as const,
-        function: {
-          name: 'search_counter_evidence',
-          description: 'Search for information that challenges or contradicts the emerging consensus',
-          parameters: {
-            type: 'object',
-            properties: {
-              query: {
-                type: 'string',
-                description: 'Search query to find counter-evidence or alternative perspectives'
-              },
-              focus: {
-                type: 'string',
-                enum: ['failures', 'risks', 'alternatives', 'criticisms', 'contradictions'],
-                description: 'What type of counter-evidence to focus on'
-              }
-            },
-            required: ['query']
-          }
-        }
-      };
-
+      // Single API call with low token limit to enforce brevity
       const completion = await safeChatCompletion(this.openai, {
         model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: contrarianPrompt }
+          { role: 'user', content: userMessage }
         ],
-        tools: [searchFunction],
-        tool_choice: 'auto',
-        temperature: 0.8,
-        max_tokens: 1500
+        temperature: 0.9, // Higher temperature for more provocative outputs
+        max_tokens: 300 // Hard cap to enforce brevity
       });
 
-      let finalResponse = completion.choices[0]?.message;
-
-      // Only call Perplexity if the contrarian requests a search (tool call)
-      if (finalResponse?.tool_calls) {
-        const toolCallResults = [];
-        for (const toolCall of finalResponse.tool_calls) {
-          if (toolCall.function?.name === 'search_counter_evidence') {
-            const args = JSON.parse(toolCall.function.arguments);
-            console.log(`[Contrarian] Searching for counter-evidence (Perplexity): ${args.query}`);
-            try {
-              const contrarianQuery = this.enhanceQueryForCounterEvidence(args.query, args.focus);
-              const searchResult = await this.perplexity.search({
-                query: contrarianQuery,
-                searchContextSize: 'low' // Use low context for cost control
-              });
-              toolCallResults.push({
-                tool_call_id: toolCall.id,
-                role: 'tool' as const,
-                content: JSON.stringify({
-                  content: searchResult.content,
-                  citations: searchResult.citations,
-                  searchResults: searchResult.searchResults,
-                  focus: args.focus
-                })
-              });
-            } catch (error) {
-              console.error(`Counter-evidence search failed for ${args.query}:`, error);
-              toolCallResults.push({
-                tool_call_id: toolCall.id,
-                role: 'tool' as const,
-                content: JSON.stringify({
-                  error: 'Search failed',
-                  message: error instanceof Error ? error.message : 'Unknown error'
-                })
-              });
-            }
-          }
-        }
-        // Get the final contrarian response after tool calls
-        const followUpCompletion = await safeChatCompletion(this.openai, {
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: contrarianPrompt },
-            finalResponse,
-            ...toolCallResults
-          ],
-          temperature: 0.8,
-          max_tokens: 1500
-        });
-        finalResponse = followUpCompletion.choices[0]?.message;
-      }
-
-      const responseContent = finalResponse?.content;
+      const responseContent = completion.choices[0]?.message?.content;
       if (!responseContent) {
         throw new Error('No response content received from OpenAI');
       }
 
       // Parse the JSON response
-      let parsedResponse: any;
+      let parsedResponse: ContrarianResponse;
       try {
         const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
         const jsonString = jsonMatch ? jsonMatch[0] : responseContent;
-        parsedResponse = JSON.parse(jsonString);
-        if (Array.isArray(parsedResponse.counter_evidence)) {
-          parsedResponse.counter_evidence = sanitizeCitations(parsedResponse.counter_evidence);
+        const rawResponse = JSON.parse(jsonString);
+        
+        // Ensure agent_id is set
+        rawResponse.agent_id = this.agentId;
+        
+        // Validate and potentially fix the stress tests
+        if (rawResponse.reasoning_stress_tests) {
+          rawResponse.reasoning_stress_tests = this.validateAndFixStressTests(rawResponse.reasoning_stress_tests);
         }
+        
+        parsedResponse = ContrarianResponseSchema.parse(rawResponse);
       } catch (error) {
         console.error('Failed to parse contrarian JSON response:', responseContent);
-        throw new Error(`Failed to parse contrarian response as JSON: ${error}`);
+        // If parsing fails, try to extract stress tests from plain text
+        parsedResponse = this.parseFromPlainText(responseContent);
       }
 
-      parsedResponse.agent_id = this.agentId;
-      const validatedResponse = ContrarianResponseSchema.parse(parsedResponse);
-      console.log(`[Contrarian] Generated critique with ${validatedResponse.blind_spots.length} blind spots identified`);
-      return validatedResponse;
+      console.log(`[Contrarian] Generated 4 epistemic stress tests`);
+      this.logStressTests(parsedResponse.reasoning_stress_tests);
+      
+      return parsedResponse;
     } catch (error) {
       console.error('Contrarian agent error:', error);
       throw new Error(`Contrarian agent failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Validate stress tests and fix common issues (hedging, length)
+   */
+  private validateAndFixStressTests(tests: ReasoningStressTests): ReasoningStressTests {
+    const fixTest = (test: string): string => {
+      // Remove hedging words
+      let fixed = test;
+      for (const hedge of FORBIDDEN_HEDGES) {
+        const regex = new RegExp(`\\b${hedge}\\b`, 'gi');
+        fixed = fixed.replace(regex, '');
+      }
+      // Clean up double spaces
+      fixed = fixed.replace(/\s+/g, ' ').trim();
+      
+      // Truncate if too long (keep first 15 words)
+      const words = fixed.split(' ');
+      if (words.length > MAX_WORDS_PER_TEST) {
+        fixed = words.slice(0, MAX_WORDS_PER_TEST).join(' ');
+        if (!fixed.endsWith('.')) fixed += '.';
+      }
+      
+      return fixed;
+    };
+
+    return {
+      lossy_simplification: fixTest(tests.lossy_simplification),
+      context_flip: fixTest(tests.context_flip),
+      incentive_misalignment: fixTest(tests.incentive_misalignment),
+      second_order_failure: fixTest(tests.second_order_failure)
+    };
+  }
+
+  /**
+   * Parse stress tests from plain text if JSON parsing fails
+   */
+  private parseFromPlainText(content: string): ContrarianResponse {
+    const lines = content.split('\n').filter(line => line.trim());
+    
+    // Try to extract labeled lines
+    const extractTest = (label: string): string => {
+      const regex = new RegExp(`${label}[:\\s]+(.+)`, 'i');
+      for (const line of lines) {
+        const match = line.match(regex);
+        if (match) return match[1].trim();
+      }
+      return 'Unable to extract stress test.';
+    };
+
+    const stressTests: ReasoningStressTests = {
+      lossy_simplification: extractTest('SIMPLIFICATION|lossy_simplification'),
+      context_flip: extractTest('CONTEXT_FLIP|context_flip'),
+      incentive_misalignment: extractTest('INCENTIVES|incentive_misalignment'),
+      second_order_failure: extractTest('SECOND_ORDER|second_order_failure')
+    };
+
+    return {
+      reasoning_stress_tests: this.validateAndFixStressTests(stressTests),
+      agent_id: this.agentId
+    };
+  }
+
+  /**
+   * Log stress tests for debugging
+   */
+  private logStressTests(tests: ReasoningStressTests): void {
+    console.log(`   - Simplification: ${tests.lossy_simplification}`);
+    console.log(`   - Context Flip: ${tests.context_flip}`);
+    console.log(`   - Incentives: ${tests.incentive_misalignment}`);
+    console.log(`   - Second-Order: ${tests.second_order_failure}`);
   }
 
   /**
@@ -206,30 +195,6 @@ export class ContrarianAgent {
     }
 
     return context;
-  }
-
-  /**
-   * Enhance search query to find counter-evidence
-   */
-  private enhanceQueryForCounterEvidence(query: string, focus?: string): string {
-    const prefixes = {
-      failures: ['failures of', 'problems with', 'when fails', 'unsuccessful'],
-      risks: ['risks of', 'dangers of', 'downsides of', 'negative effects'],
-      alternatives: ['alternatives to', 'instead of', 'different approach'],
-      criticisms: ['criticism of', 'critique of', 'arguments against'],
-      contradictions: ['contradicts', 'disputes', 'challenges', 'refutes']
-    };
-
-    if (focus && prefixes[focus as keyof typeof prefixes]) {
-      const focusPrefixes = prefixes[focus as keyof typeof prefixes];
-      const randomPrefix = focusPrefixes[Math.floor(Math.random() * focusPrefixes.length)];
-      return `${randomPrefix} ${query}`;
-    }
-
-    // Default: add some contrarian keywords
-    const contrarianTerms = ['criticism', 'problems', 'limitations', 'failures', 'controversy'];
-    const randomTerm = contrarianTerms[Math.floor(Math.random() * contrarianTerms.length)];
-    return `${query} ${randomTerm}`;
   }
 
   /**
