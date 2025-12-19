@@ -37,6 +37,12 @@ interface ConsensusClassification {
   risk_statement: string;
 }
 
+interface CounterfactualRiskAnalysis {
+  plausible_failure: string;
+  why_missed_early: string;
+  early_warning_signal: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   critique?: string;
@@ -135,6 +141,7 @@ interface DelphiReport {
   round_history?: RoundData[];
   round_results?: RoundResult[];
   cost_summary?: CostSummary;
+  counterfactual_risk?: CounterfactualRiskAnalysis;
 }
 
 interface RunPageProps {
@@ -443,6 +450,36 @@ export default function RunPage({ params }: RunPageProps) {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Counterfactual Risk Analysis (If the Dominant Conclusion Is Wrong) */}
+            {report.counterfactual_risk && (
+              <Card className="mt-6 border-red-200 bg-gradient-to-r from-red-50 to-orange-50">
+                <CardHeader>
+                  <CardTitle className="text-red-800 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    Counterfactual Risk (If the Dominant Conclusion Is Wrong)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-white rounded-lg border border-red-100">
+                      <div className="text-sm font-semibold text-red-800 mb-2">Plausible failure:</div>
+                      <p className="text-slate-700">{report.counterfactual_risk.plausible_failure}</p>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border border-red-100">
+                      <div className="text-sm font-semibold text-red-800 mb-2">Why it&apos;s missed early:</div>
+                      <p className="text-slate-700">{report.counterfactual_risk.why_missed_early}</p>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border border-red-100">
+                      <div className="text-sm font-semibold text-red-800 mb-2">Early warning signal:</div>
+                      <p className="text-slate-700">{report.counterfactual_risk.early_warning_signal}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Questions to Consider - Stress Tests (Prominent Section) */}
             {report.contrarian_observations && report.contrarian_observations.some(c => c.reasoning_stress_tests) && (

@@ -369,6 +369,12 @@ interface ConsensusClassification {
   risk_statement: string;
 }
 
+interface CounterfactualRiskAnalysis {
+  plausible_failure: string;
+  why_missed_early: string;
+  early_warning_signal: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   challenge?: string;
@@ -410,6 +416,7 @@ interface DelphiReportData {
   round_history?: RoundSynthesis[];
   contrarian_observations?: ContrarianObservation[];
   dissenting_views?: (string | DissentingView)[];
+  counterfactual_risk?: CounterfactualRiskAnalysis;
 }
 
 interface DelphiReportPDFProps {
@@ -581,6 +588,24 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
             </View>
           )}
         </View>
+
+        {report.counterfactual_risk && (
+          <View style={styles.stressTestSection}>
+            <Text style={styles.stressTestTitle}>Counterfactual Risk (If the Dominant Conclusion Is Wrong)</Text>
+            <View style={styles.stressTestItem}>
+              <Text style={styles.stressTestLabel}>Plausible failure:</Text>
+              <Text style={styles.stressTestText}>{report.counterfactual_risk.plausible_failure}</Text>
+            </View>
+            <View style={styles.stressTestItem}>
+              <Text style={styles.stressTestLabel}>Why it&apos;s missed early:</Text>
+              <Text style={styles.stressTestText}>{report.counterfactual_risk.why_missed_early}</Text>
+            </View>
+            <View style={styles.stressTestItem}>
+              <Text style={styles.stressTestLabel}>Early warning signal:</Text>
+              <Text style={styles.stressTestText}>{report.counterfactual_risk.early_warning_signal}</Text>
+            </View>
+          </View>
+        )}
 
         {report.contrarian_observations && report.contrarian_observations.some(c => c.reasoning_stress_tests) && (
           <View style={styles.stressTestSection}>

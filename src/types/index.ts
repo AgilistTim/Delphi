@@ -181,6 +181,17 @@ export interface ConsensusClassification {
   risk_statement: string; // e.g., "False confidence through obvious truths"
 }
 
+// Counterfactual Risk Analysis - stress tests the dominant conclusion
+// Runs AFTER consensus classification, BEFORE PDF assembly
+export interface CounterfactualRiskAnalysis {
+  // If the dominant conclusion is wrong, how could it fail in the real world?
+  plausible_failure: string;
+  // Why this failure would not be detected quickly
+  why_missed_early: string;
+  // One observable indicator that the failure is occurring
+  early_warning_signal: string;
+}
+
 // Convergence Metrics
 export interface ConvergenceMetrics {
   position_stability: number; // 0-1, how many experts changed positions
@@ -244,6 +255,7 @@ export interface DelphiReport {
   round_history: RoundSynthesis[];
   round_results?: RoundResult[];
   cost_summary?: CostSummary;
+  counterfactual_risk?: CounterfactualRiskAnalysis;
   generated_at: Date;
 }
 
@@ -351,4 +363,4 @@ export interface CostSummary {
   breakdown_by_round: Record<number, TokenUsage>;
   perplexity_calls: number;
   openai_calls: number;
-}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
