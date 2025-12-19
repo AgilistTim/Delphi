@@ -104,6 +104,15 @@ export interface CounterfactualRiskAnalysis {
   early_warning_signal: string;
 }
 
+// Oppositional Case - argues the opposite of the dominant conclusion
+// This is adversarial advocacy, not risk analysis
+export interface OppositionalCase {
+  opposite_position: string;
+  argument: string;
+  outperformance_scenario: string;
+  uncomfortable_implication: string;
+}
+
 export interface ContrarianResponse {
   // NEW: Four epistemic stress tests
   reasoning_stress_tests?: ReasoningStressTests;
@@ -178,6 +187,7 @@ export interface DelphiReport {
   round_results?: RoundResult[];
   cost_summary?: CostSummary;
   counterfactual_risk?: CounterfactualRiskAnalysis;
+  oppositional_case?: OppositionalCase;
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }
