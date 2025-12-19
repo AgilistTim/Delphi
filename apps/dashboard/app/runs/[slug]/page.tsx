@@ -50,6 +50,11 @@ interface OppositionalCase {
   uncomfortable_implication: string;
 }
 
+interface AssumptionExposure {
+  expert_label: string;
+  failed_assumption: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   critique?: string;
@@ -150,6 +155,7 @@ interface DelphiReport {
   cost_summary?: CostSummary;
   counterfactual_risk?: CounterfactualRiskAnalysis;
   oppositional_case?: OppositionalCase;
+  assumption_exposures?: AssumptionExposure[];
 }
 
 interface RunPageProps {
@@ -521,6 +527,33 @@ export default function RunPage({ params }: RunPageProps) {
                       <div className="text-sm font-semibold text-amber-800 mb-2">Uncomfortable Implication:</div>
                       <p className="text-slate-700 italic">{report.oppositional_case.uncomfortable_implication}</p>
                     </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Assumption Exposures - What Must Fail for the Oppositional Case to Win */}
+            {report.assumption_exposures && report.assumption_exposures.length > 0 && (
+              <Card className="mt-6 border-slate-200 bg-gradient-to-r from-slate-50 to-gray-50">
+                <CardHeader>
+                  <CardTitle className="text-slate-700 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    If the Oppositional Case Is Correct...
+                  </CardTitle>
+                  <p className="text-sm text-slate-600 mt-1">
+                    What assumption in each expert&apos;s position would fail:
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {report.assumption_exposures.map((ae, idx) => (
+                      <div key={idx} className="p-4 bg-white rounded-lg border border-slate-200">
+                        <div className="text-sm font-semibold text-slate-700 mb-2">{ae.expert_label}:</div>
+                        <p className="text-slate-600">{ae.failed_assumption}</p>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>

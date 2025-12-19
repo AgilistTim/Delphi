@@ -113,6 +113,13 @@ export interface OppositionalCase {
   uncomfortable_implication: string;
 }
 
+// Assumption Exposure - what must fail for the oppositional case to win
+// Preserves tension without rebuttal
+export interface AssumptionExposure {
+  expert_label: string;
+  failed_assumption: string;
+}
+
 export interface ContrarianResponse {
   // NEW: Four epistemic stress tests
   reasoning_stress_tests?: ReasoningStressTests;
@@ -188,6 +195,7 @@ export interface DelphiReport {
   cost_summary?: CostSummary;
   counterfactual_risk?: CounterfactualRiskAnalysis;
   oppositional_case?: OppositionalCase;
+  assumption_exposures?: AssumptionExposure[];
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }

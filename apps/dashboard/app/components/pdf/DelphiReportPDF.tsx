@@ -338,6 +338,43 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: '#fcd34d',
   },
+  assumptionSection: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#64748b',
+  },
+  assumptionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#334155',
+  },
+  assumptionSubtitle: {
+    fontSize: 9,
+    color: '#475569',
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  assumptionItem: {
+    marginBottom: 8,
+    paddingLeft: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: '#94a3b8',
+  },
+  assumptionLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#334155',
+    marginBottom: 2,
+  },
+  assumptionText: {
+    fontSize: 10,
+    color: '#1e293b',
+    lineHeight: 1.4,
+  },
 });
 
 interface Source {
@@ -419,6 +456,11 @@ interface OppositionalCase {
   uncomfortable_implication: string;
 }
 
+interface AssumptionExposure {
+  expert_label: string;
+  failed_assumption: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   challenge?: string;
@@ -462,6 +504,7 @@ interface DelphiReportData {
   dissenting_views?: (string | DissentingView)[];
   counterfactual_risk?: CounterfactualRiskAnalysis;
   oppositional_case?: OppositionalCase;
+  assumption_exposures?: AssumptionExposure[];
 }
 
 interface DelphiReportPDFProps {
@@ -674,6 +717,21 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
               <Text style={styles.oppositionalLabel}>Uncomfortable Implication:</Text>
               <Text style={styles.oppositionalText}>{report.oppositional_case.uncomfortable_implication}</Text>
             </View>
+          </View>
+        )}
+
+        {report.assumption_exposures && report.assumption_exposures.length > 0 && (
+          <View style={styles.assumptionSection}>
+            <Text style={styles.assumptionTitle}>If the Oppositional Case Is Correct...</Text>
+            <Text style={styles.assumptionSubtitle}>
+              What assumption in each expert&apos;s position would fail:
+            </Text>
+            {report.assumption_exposures.map((ae, idx) => (
+              <View key={idx} style={styles.assumptionItem}>
+                <Text style={styles.assumptionLabel}>{ae.expert_label}:</Text>
+                <Text style={styles.assumptionText}>{ae.failed_assumption}</Text>
+              </View>
+            ))}
           </View>
         )}
 
