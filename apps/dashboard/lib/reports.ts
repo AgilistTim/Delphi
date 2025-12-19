@@ -45,15 +45,22 @@ export interface FrameExpansion {
   metric_traps: string[];
 }
 
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd?: number;
+}
+
 export interface CostSummary {
   total_tokens: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
   estimated_total_cost_usd: number;
   openai_calls: number;
   perplexity_calls: number;
-  breakdown_by_agent: Record<string, { tokens: number; cost: number; calls: number }>;
-  breakdown_by_round: Record<number, { tokens: number; cost: number }>;
+  breakdown_by_agent_type: Record<string, TokenUsage>;
+  breakdown_by_round: Record<number, TokenUsage>;
 }
 
 export interface ExpertResponse {
