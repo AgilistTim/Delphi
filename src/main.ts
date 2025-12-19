@@ -514,6 +514,13 @@ export class DelphiAgent {
       agent_id: this.experts[index]?.getId()
     }));
 
+    const roundResultsForReport = roundResults.map((r, index) => ({
+      round_number: index + 1,
+      synthesis: r.synthesis,
+      expert_responses: r.expertResponses,
+      contrarian_responses: r.contrarianResponses
+    }));
+
     const report: DelphiReport = {
       prompt,
       consensus_summary: consensusSummary,
@@ -523,6 +530,7 @@ export class DelphiAgent {
       dissenting_views: dissentingViews,
       convergence_analysis: convergenceMetrics,
       round_history: roundResults.map(r => r.synthesis),
+      round_results: roundResultsForReport,
       generated_at: new Date(),
       failed_experts: failedExperts
     } as any;
