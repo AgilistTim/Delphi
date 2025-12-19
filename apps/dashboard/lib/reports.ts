@@ -20,6 +20,42 @@ export type EpistemicStance =
   | 'contrarian_challenger'
   | 'evidence_synthesizer';
 
+export type DecisionType = 'strategy' | 'policy' | 'hiring' | 'product' | 'risk' | 'operations' | 'research' | 'other';
+export type TimeHorizon = 'immediate' | 'short_term' | 'medium_term' | 'long_term' | 'unknown';
+export type PrimaryObjective = 'speed' | 'accuracy' | 'innovation' | 'cost' | 'safety' | 'quality' | 'multiple' | 'unclear';
+
+export interface QuestionAnalysis {
+  original_question: string;
+  decision_type: DecisionType;
+  time_horizon: TimeHorizon;
+  primary_objective: PrimaryObjective;
+  constraints: string[];
+  unknowns: string[];
+  inferred_assumptions: string[];
+  ambiguity_score: number;
+  refined_question?: string;
+}
+
+export interface FrameExpansion {
+  steelman_opposite_goal: string;
+  failure_modes: string[];
+  second_order_effects: string[];
+  stakeholder_inversion: string[];
+  boundary_conditions: string[];
+  metric_traps: string[];
+}
+
+export interface CostSummary {
+  total_tokens: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  estimated_total_cost_usd: number;
+  openai_calls: number;
+  perplexity_calls: number;
+  breakdown_by_agent: Record<string, { tokens: number; cost: number; calls: number }>;
+  breakdown_by_round: Record<number, { tokens: number; cost: number }>;
+}
+
 export interface ExpertResponse {
   position: string;
   reasoning: string;
@@ -73,6 +109,7 @@ export interface DelphiReport {
     question: string;
     context?: string;
   };
+  question_analysis?: QuestionAnalysis;
   consensus_summary: {
     final_position: string;
     support_level: string;
@@ -101,6 +138,7 @@ export interface DelphiReport {
   };
   round_history: RoundSynthesis[];
   round_results?: RoundResult[];
+  cost_summary?: CostSummary;
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }

@@ -11,6 +11,8 @@ import { ContrarianAgent } from './agents/contrarian.js';
 import { OrchestratorAgent } from './agents/orchestrator.js';
 import { ConvergenceTracker } from './utils/convergence-tracker.js';
 import { generatePersonas, PersonaSpec } from './utils/persona-generator.js';
+import { CostTracker } from './utils/cost-tracker.js';
+import { refineQuestion, formatQuestionAnalysisForExperts } from './utils/question-refiner.js';
 
 import {
   DelphiPrompt,
@@ -19,7 +21,8 @@ import {
   RoundSynthesis,
   DelphiReport,
   AgentConfig,
-  APIConfig
+  APIConfig,
+  QuestionAnalysis
 } from './types/index.js';
 
 // Load environment variables
@@ -82,8 +85,42 @@ export class DelphiAgent {
 
     // Structured log for all agent requests/responses
     const agentLogs: any[] = [];
+    
+    // Initialize cost tracker
+    const costTracker = new CostTracker();
 
     try {
+      // Phase 0: Question Refiner - analyze the question before anything else
+      console.log(`\n🔍 Phase 0: Analyzing question structure...`);
+      let questionAnalysis: QuestionAnalysis | undefined;
+      try {
+        questionAnalysis = await refineQuestion(
+          this.openai, 
+          prompt.question, 
+          this.config.openai.model,
+          costTracker
+        );
+        console.log(`   ✅ Question analysis complete`);
+        console.log(`   📋 Decision type: ${questionAnalysis.decision_type}`);
+        console.log(`   ⏱️  Time horizon: ${questionAnalysis.time_horizon}`);
+        console.log(`   🎯 Primary objective: ${questionAnalysis.primary_objective}`);
+        console.log(`   ⚠️  Ambiguity score: ${(questionAnalysis.ambiguity_score * 100).toFixed(0)}%`);
+        if (questionAnalysis.unknowns.length > 0) {
+          console.log(`   ❓ Key unknowns: ${questionAnalysis.unknowns.length}`);
+        }
+      } catch (error) {
+        console.warn(`   ⚠️  Question analysis failed, continuing without:`, error);
+      }
+
+      // Enhance prompt context with question analysis if available
+      const enhancedPrompt: DelphiPrompt = questionAnalysis ? {
+        ...prompt,
+        context: [
+          prompt.context || '',
+          formatQuestionAnalysisForExperts(questionAnalysis)
+        ].filter(Boolean).join('\n\n')
+      } : prompt;
+
       // Generate detailed expert personas using OpenAI
       const personas: PersonaSpec[] = await generatePersonas(this.openai, prompt.question, expertCount);
       // Initialize expert agents with generated personas
@@ -106,11 +143,12 @@ export class DelphiAgent {
         
         const roundResult = await this.executeRoundWithValidation(
           round,
-          prompt,
+          enhancedPrompt,
           round > 1 ? roundResults[round - 2].synthesis : undefined,
           round > 1 ? roundResults[round - 2].contrarianResponses : [],
           personas,
-          agentLogs
+          agentLogs,
+          costTracker
         );
 
         roundResults.push(roundResult);
@@ -137,13 +175,23 @@ export class DelphiAgent {
       const report = await this.generateFinalReportWithSupport(
         prompt,
         roundResults,
-        personas
+        personas,
+        questionAnalysis,
+        costTracker
       );
       
       // Save report to file
       await this.saveReport(report);
       // Save agent logs to file
       await this.saveAgentLogs(agentLogs, prompt.question);
+
+      // Log cost summary
+      const costSummary = costTracker.getSummary();
+      console.log(`\n💰 Cost Summary:`);
+      console.log(`   Total tokens: ${costSummary.total_tokens.toLocaleString()}`);
+      console.log(`   Estimated cost: $${costSummary.estimated_total_cost_usd.toFixed(4)}`);
+      console.log(`   OpenAI calls: ${costSummary.openai_calls}`);
+      console.log(`   Perplexity calls: ${costSummary.perplexity_calls}`);
 
       console.log(`\n🎉 Delphi process completed successfully!`);
       console.log(`📄 Report saved to: ${this.getReportFilename(prompt.question)}`);
@@ -222,7 +270,8 @@ export class DelphiAgent {
     previousSynthesis: RoundSynthesis | undefined,
     previousContrarianResponses: ContrarianResponse[],
     personas: PersonaSpec[],
-    agentLogs: any[]
+    agentLogs: any[],
+    costTracker?: CostTracker
   ): Promise<{
     expertResponses: ExpertResponse[];
     synthesis: RoundSynthesis;
@@ -244,6 +293,9 @@ export class DelphiAgent {
         query: prompt.question,
         searchContextSize: 'low'
       });
+      if (costTracker) {
+        costTracker.addPerplexityCall(sharedBaseline.content.length / 4, this.config.perplexity.model);
+      }
       console.log(`   ✅ Baseline research complete`);
     } catch (error) {
       console.warn('   ⚠️  Baseline research failed:', error);
@@ -267,6 +319,9 @@ export class DelphiAgent {
           query: categoryQuery,
           searchContextSize: 'low'
         });
+        if (costTracker) {
+          costTracker.addPerplexityCall(result.content.length / 4, this.config.perplexity.model);
+        }
         categoryResearch.set(category, result);
         console.log(`   ✅ ${category} research complete`);
       } catch (error) {
@@ -471,7 +526,9 @@ export class DelphiAgent {
       contrarianResponses: ContrarianResponse[];
       failedExperts?: { role: string; error: string }[];
     }>,
-    personas: PersonaSpec[]
+    personas: PersonaSpec[],
+    questionAnalysis?: QuestionAnalysis,
+    costTracker?: CostTracker
   ) {
     console.log(`\n📝 Generating final report`);
 
@@ -523,6 +580,7 @@ export class DelphiAgent {
 
     const report: DelphiReport = {
       prompt,
+      question_analysis: questionAnalysis,
       consensus_summary: consensusSummary,
       expert_positions: finalRound.expertResponses,
       expert_personas: expertPersonas,
@@ -531,6 +589,7 @@ export class DelphiAgent {
       convergence_analysis: convergenceMetrics,
       round_history: roundResults.map(r => r.synthesis),
       round_results: roundResultsForReport,
+      cost_summary: costTracker?.getSummary(),
       generated_at: new Date(),
       failed_experts: failedExperts
     } as any;
@@ -805,6 +864,45 @@ Generate a JSON response with:
           formatted += `- ${evidence.title}: ${evidence.summary} (${evidence.url})\n`;
         });
         formatted += '\n';
+      }
+
+      if (response.frame_expansion) {
+        const fe = response.frame_expansion;
+        formatted += `### Frame Expansion (MUST ADDRESS)\n\n`;
+        
+        if (fe.steelman_opposite_goal) {
+          formatted += `**Steelman of Opposite Goal:** ${fe.steelman_opposite_goal}\n\n`;
+        }
+        
+        if (fe.failure_modes && fe.failure_modes.length > 0) {
+          formatted += `**Failure Modes to Consider:**\n`;
+          fe.failure_modes.forEach(mode => formatted += `- ${mode}\n`);
+          formatted += '\n';
+        }
+        
+        if (fe.second_order_effects && fe.second_order_effects.length > 0) {
+          formatted += `**Second-Order Effects:**\n`;
+          fe.second_order_effects.forEach(effect => formatted += `- ${effect}\n`);
+          formatted += '\n';
+        }
+        
+        if (fe.stakeholder_inversion && fe.stakeholder_inversion.length > 0) {
+          formatted += `**Stakeholder Inversion (who loses?):**\n`;
+          fe.stakeholder_inversion.forEach(item => formatted += `- ${item}\n`);
+          formatted += '\n';
+        }
+        
+        if (fe.boundary_conditions && fe.boundary_conditions.length > 0) {
+          formatted += `**Boundary Conditions (where advice fails):**\n`;
+          fe.boundary_conditions.forEach(cond => formatted += `- ${cond}\n`);
+          formatted += '\n';
+        }
+        
+        if (fe.metric_traps && fe.metric_traps.length > 0) {
+          formatted += `**Metric Traps:**\n`;
+          fe.metric_traps.forEach(trap => formatted += `- ${trap}\n`);
+          formatted += '\n';
+        }
       }
     });
 
