@@ -55,6 +55,11 @@ interface AssumptionExposure {
   failed_assumption: string;
 }
 
+interface DecisionFork {
+  prompt: string;
+  concrete_risks: string[];
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   critique?: string;
@@ -156,6 +161,7 @@ interface DelphiReport {
   counterfactual_risk?: CounterfactualRiskAnalysis;
   oppositional_case?: OppositionalCase;
   assumption_exposures?: AssumptionExposure[];
+  decision_fork?: DecisionFork;
 }
 
 interface RunPageProps {
@@ -555,6 +561,33 @@ export default function RunPage({ params }: RunPageProps) {
                       </div>
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Decision Fork - Forces Reader to Acknowledge What They're Choosing to Risk */}
+            {report.decision_fork && (
+              <Card className="mt-6 border-amber-300 bg-gradient-to-r from-amber-50 to-yellow-50">
+                <CardHeader>
+                  <CardTitle className="text-amber-900 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                    </svg>
+                    Decision Fork (Explicit Acknowledgement Required)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-amber-900 font-semibold mb-4">{report.decision_fork.prompt}</p>
+                  <div className="space-y-3">
+                    {report.decision_fork.concrete_risks.map((risk, idx) => (
+                      <div key={idx} className="p-3 bg-white rounded-lg border border-amber-200">
+                        <p className="text-amber-800">{idx + 1}. {risk}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-sm text-amber-700 italic mt-4">
+                    You are not answering this. The system is not answering this. You must answer it yourself.
+                  </p>
                 </CardContent>
               </Card>
             )}

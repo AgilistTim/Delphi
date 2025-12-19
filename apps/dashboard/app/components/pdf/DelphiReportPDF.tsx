@@ -375,6 +375,39 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     lineHeight: 1.4,
   },
+  decisionForkSection: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#fef3c7',
+    borderRadius: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#d97706',
+  },
+  decisionForkTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#92400e',
+  },
+  decisionForkPrompt: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    color: '#78350f',
+    marginBottom: 12,
+  },
+  decisionForkRisk: {
+    fontSize: 10,
+    color: '#451a03',
+    marginBottom: 6,
+    paddingLeft: 8,
+    lineHeight: 1.4,
+  },
+  decisionForkFooter: {
+    fontSize: 9,
+    fontStyle: 'italic',
+    color: '#92400e',
+    marginTop: 8,
+  },
 });
 
 interface Source {
@@ -461,6 +494,11 @@ interface AssumptionExposure {
   failed_assumption: string;
 }
 
+interface DecisionFork {
+  prompt: string;
+  concrete_risks: string[];
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   challenge?: string;
@@ -505,6 +543,7 @@ interface DelphiReportData {
   counterfactual_risk?: CounterfactualRiskAnalysis;
   oppositional_case?: OppositionalCase;
   assumption_exposures?: AssumptionExposure[];
+  decision_fork?: DecisionFork;
 }
 
 interface DelphiReportPDFProps {
@@ -732,6 +771,19 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
                 <Text style={styles.assumptionText}>{ae.failed_assumption}</Text>
               </View>
             ))}
+          </View>
+        )}
+
+        {report.decision_fork && (
+          <View style={styles.decisionForkSection}>
+            <Text style={styles.decisionForkTitle}>Decision Fork (Explicit Acknowledgement Required)</Text>
+            <Text style={styles.decisionForkPrompt}>{report.decision_fork.prompt}</Text>
+            {report.decision_fork.concrete_risks.map((risk, idx) => (
+              <Text key={idx} style={styles.decisionForkRisk}>{idx + 1}. {risk}</Text>
+            ))}
+            <Text style={styles.decisionForkFooter}>
+              You are not answering this. The system is not answering this. You must answer it yourself.
+            </Text>
           </View>
         )}
 
