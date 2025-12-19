@@ -2,32 +2,31 @@
 
 import * as React from "react";
 import { cn } from "../lib/utils";
-
-interface RoundData {
-  round_number: number;
-  consensus_areas: string[];
-  divergence_areas: string[];
-  average_confidence: number;
-  participation_count: number;
-  key_insights: string[];
-  clusters?: Array<{
-    theme: string;
-    positions: string[];
-    expert_ids: string[];
-    confidence_range: [number, number];
-  }>;
-}
+import type { 
+  RoundResult, 
+  RoundSynthesis, 
+  ExpertResponse, 
+  ContrarianResponse 
+} from "../lib/reports";
 
 interface RoundEvolutionProps {
-  rounds: RoundData[];
+  rounds: RoundSynthesis[];
+  roundResults?: RoundResult[];
   convergenceMetrics?: {
     position_stability: number;
     consensus_clarity: number;
     confidence_spread: number;
     citation_overlap: number;
+    disagreement_index?: number;
+    minority_persistence?: number;
     rounds_completed: number;
     termination_reason: string;
   };
+  expertPersonas?: Array<{
+    name: string;
+    role: string;
+    agent_id?: string;
+  }>;
 }
 
 function MetricBar({ 
@@ -69,7 +68,287 @@ function MetricBar({
   );
 }
 
-function RoundCard({ round, isLast }: { round: RoundData; isLast: boolean }) {
+function TrendChart({ 
+  data, 
+  label, 
+  color = "#3b82f6",
+  height = 60 
+}: { 
+  data: number[]; 
+  label: string;
+  color?: string;
+  height?: number;
+}) {
+  if (data.length < 2) return null;
+  
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const width = 200;
+  const padding = 10;
+  
+  const points = data.map((value, index) => {
+    const x = padding + (index / (data.length - 1)) * (width - 2 * padding);
+    const y = height - padding - ((value - min) / range) * (height - 2 * padding);
+    return `${x},${y}`;
+  }).join(" ");
+
+  return (
+    <div className="space-y-1">
+      <div className="text-xs text-slate-600">{label}</div>
+      <svg width={width} height={height} className="bg-slate-50 rounded">
+        <polyline
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          points={points}
+        />
+        {data.map((value, index) => {
+          const x = padding + (index / (data.length - 1)) * (width - 2 * padding);
+          const y = height - padding - ((value - min) / range) * (height - 2 * padding);
+          return (
+            <circle
+              key={index}
+              cx={x}
+              cy={y}
+              r="4"
+              fill={color}
+            />
+          );
+        })}
+        <text x={padding} y={height - 2} fontSize="10" fill="#64748b">R1</text>
+        <text x={width - padding - 10} y={height - 2} fontSize="10" fill="#64748b">R{data.length}</text>
+      </svg>
+      <div className="flex justify-between text-xs text-slate-500">
+        <span>{data[0]?.toFixed(1)}</span>
+        <span>{data[data.length - 1]?.toFixed(1)}</span>
+      </div>
+    </div>
+  );
+}
+
+function Accordion({ 
+  title, 
+  children, 
+  defaultOpen = false,
+  badge,
+  variant = "default"
+}: { 
+  title: string; 
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  badge?: React.ReactNode;
+  variant?: "default" | "expert" | "contrarian";
+}) {
+  const [isOpen, setIsOpen] = React.useState(defaultOpen);
+  
+  const variantStyles = {
+    default: "border-slate-200 bg-white",
+    expert: "border-blue-200 bg-blue-50/50",
+    contrarian: "border-amber-200 bg-amber-50/50"
+  };
+
+  return (
+    <div className={cn("border rounded-lg overflow-hidden", variantStyles[variant])}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+        className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-slate-50/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-slate-800">{title}</span>
+          {badge}
+        </div>
+        <svg 
+          className={cn("w-5 h-5 text-slate-400 transition-transform", isOpen && "rotate-180")}
+          fill="none" 
+          viewBox="0 0 24 24" 
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen && (
+        <div className="px-4 pb-4 border-t border-slate-100 animate-in slide-in-from-top-2 duration-200">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExpertResponseCard({ 
+  response, 
+  expertName 
+}: { 
+  response: ExpertResponse;
+  expertName?: string;
+}) {
+  const displayName = expertName || response.expertise_area || response.agent_id || "Expert";
+  
+  return (
+    <Accordion 
+      title={displayName}
+      badge={
+        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">
+          {response.confidence}/10 confidence
+        </span>
+      }
+      variant="expert"
+    >
+      <div className="space-y-4 pt-3">
+        <div>
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Position</div>
+          <p className="text-sm text-slate-700">{response.position}</p>
+        </div>
+        
+        {response.reasoning && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Reasoning</div>
+            <p className="text-sm text-slate-600">{response.reasoning}</p>
+          </div>
+        )}
+        
+        {response.research_reasoning && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Research-Based Reasoning</div>
+            <p className="text-sm text-slate-600">{response.research_reasoning}</p>
+          </div>
+        )}
+        
+        {response.experience_reasoning && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Experience-Based Reasoning</div>
+            <p className="text-sm text-slate-600">{response.experience_reasoning}</p>
+          </div>
+        )}
+        
+        {response.falsifiability && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">What Would Change My Mind</div>
+            <p className="text-sm text-slate-600">{response.falsifiability}</p>
+          </div>
+        )}
+        
+        {response.strongest_counter_argument && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Strongest Counter-Argument</div>
+            <p className="text-sm text-slate-600">{response.strongest_counter_argument}</p>
+          </div>
+        )}
+        
+        {response.conditional_factors && response.conditional_factors.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Conditional Factors</div>
+            <ul className="text-sm text-slate-600 list-disc list-inside">
+              {response.conditional_factors.map((factor, i) => (
+                <li key={i}>{factor}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {response.justification_basis && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">Justification basis:</span>
+            <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-700 rounded">
+              {response.justification_basis.replace(/_/g, " ")}
+            </span>
+          </div>
+        )}
+        
+        {response.sources && response.sources.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Sources ({response.sources.length})</div>
+            <ul className="text-xs text-slate-600 space-y-1">
+              {response.sources.slice(0, 3).map((source, i) => (
+                <li key={i} className="truncate">
+                  <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                    {source.title}
+                  </a>
+                </li>
+              ))}
+              {response.sources.length > 3 && (
+                <li className="text-slate-400">+{response.sources.length - 3} more sources</li>
+              )}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Accordion>
+  );
+}
+
+function ContrarianResponseCard({ response }: { response: ContrarianResponse }) {
+  return (
+    <Accordion 
+      title="Contrarian Challenge"
+      badge={
+        <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">
+          {response.blind_spots?.length || 0} blind spots
+        </span>
+      }
+      variant="contrarian"
+    >
+      <div className="space-y-4 pt-3">
+        <div>
+          <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Critique</div>
+          <p className="text-sm text-slate-700">{response.critique}</p>
+        </div>
+        
+        {response.alternative_framework && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Alternative Framework</div>
+            <p className="text-sm text-slate-600">{response.alternative_framework}</p>
+          </div>
+        )}
+        
+        {response.blind_spots && response.blind_spots.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Blind Spots Identified</div>
+            <ul className="text-sm text-slate-600 list-disc list-inside">
+              {response.blind_spots.map((spot, i) => (
+                <li key={i}>{spot}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {response.counter_evidence && response.counter_evidence.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">Counter Evidence</div>
+            <ul className="text-xs text-slate-600 space-y-1">
+              {response.counter_evidence.map((evidence, i) => (
+                <li key={i}>
+                  <a href={evidence.url} target="_blank" rel="noopener noreferrer" className="text-amber-600 hover:underline">
+                    {evidence.title}
+                  </a>
+                  {evidence.summary && <span className="text-slate-500"> - {evidence.summary}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </Accordion>
+  );
+}
+
+function RoundCard({ 
+  round, 
+  roundResult,
+  isLast,
+  expertPersonas
+}: { 
+  round: RoundSynthesis; 
+  roundResult?: RoundResult;
+  isLast: boolean;
+  expertPersonas?: Array<{ name: string; role: string; agent_id?: string }>;
+}) {
+  const getExpertName = (agentId?: string) => {
+    if (!agentId || !expertPersonas) return undefined;
+    const persona = expertPersonas.find(p => p.agent_id === agentId);
+    return persona?.name;
+  };
   const [isExpanded, setIsExpanded] = React.useState(false);
 
   return (
@@ -182,9 +461,8 @@ function RoundCard({ round, isLast }: { round: RoundData; isLast: boolean }) {
 
                 {/* Clusters */}
                 {round.clusters && round.clusters.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium text-slate-700 mb-2">Expert Clusters & Positions</h4>
-                    <div className="space-y-3">
+                  <Accordion title={`Expert Clusters (${round.clusters.length})`}>
+                    <div className="space-y-3 pt-2">
                       {round.clusters.map((cluster, i) => (
                         <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
                           <div className="flex items-center justify-between mb-2">
@@ -211,7 +489,33 @@ function RoundCard({ round, isLast }: { round: RoundData; isLast: boolean }) {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </Accordion>
+                )}
+
+                {/* Expert Responses - Verbatim */}
+                {roundResult && roundResult.expert_responses && roundResult.expert_responses.length > 0 && (
+                  <Accordion title={`Expert Responses (${roundResult.expert_responses.length})`}>
+                    <div className="space-y-3 pt-2">
+                      {roundResult.expert_responses.map((response, i) => (
+                        <ExpertResponseCard 
+                          key={i} 
+                          response={response}
+                          expertName={getExpertName(response.agent_id)}
+                        />
+                      ))}
+                    </div>
+                  </Accordion>
+                )}
+
+                {/* Contrarian Challenges */}
+                {roundResult && roundResult.contrarian_responses && roundResult.contrarian_responses.length > 0 && (
+                  <Accordion title={`Contrarian Challenges (${roundResult.contrarian_responses.length})`}>
+                    <div className="space-y-3 pt-2">
+                      {roundResult.contrarian_responses.map((response, i) => (
+                        <ContrarianResponseCard key={i} response={response} />
+                      ))}
+                    </div>
+                  </Accordion>
                 )}
               </div>
             )}
@@ -222,7 +526,12 @@ function RoundCard({ round, isLast }: { round: RoundData; isLast: boolean }) {
   );
 }
 
-export default function RoundEvolution({ rounds, convergenceMetrics }: RoundEvolutionProps) {
+export default function RoundEvolution({ 
+  rounds, 
+  roundResults,
+  convergenceMetrics,
+  expertPersonas 
+}: RoundEvolutionProps) {
   if (rounds.length === 0) {
     return (
       <div className="text-center py-8 text-slate-500">
@@ -230,6 +539,11 @@ export default function RoundEvolution({ rounds, convergenceMetrics }: RoundEvol
       </div>
     );
   }
+
+  const confidenceTrend = rounds.map(r => r.average_confidence);
+  const clusterTrend = rounds.map(r => r.clusters?.length || 0);
+  const consensusTrend = rounds.map(r => r.consensus_areas.length);
+  const divergenceTrend = rounds.map(r => r.divergence_areas.length);
 
   return (
     <div className="space-y-6">
@@ -250,6 +564,13 @@ export default function RoundEvolution({ rounds, convergenceMetrics }: RoundEvol
                 value={convergenceMetrics.consensus_clarity}
                 color={convergenceMetrics.consensus_clarity > 0.7 ? "green" : "amber"}
               />
+              {convergenceMetrics.disagreement_index !== undefined && (
+                <MetricBar 
+                  label="Disagreement Index" 
+                  value={convergenceMetrics.disagreement_index}
+                  color={convergenceMetrics.disagreement_index < 0.3 ? "green" : "amber"}
+                />
+              )}
             </div>
             <div className="space-y-4">
               <MetricBar 
@@ -257,6 +578,13 @@ export default function RoundEvolution({ rounds, convergenceMetrics }: RoundEvol
                 value={convergenceMetrics.citation_overlap}
                 color="blue"
               />
+              {convergenceMetrics.minority_persistence !== undefined && (
+                <MetricBar 
+                  label="Minority Persistence" 
+                  value={convergenceMetrics.minority_persistence}
+                  color={convergenceMetrics.minority_persistence > 0.5 ? "amber" : "green"}
+                />
+              )}
               <div className="space-y-1">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-600">Confidence Spread</span>
@@ -293,16 +621,52 @@ export default function RoundEvolution({ rounds, convergenceMetrics }: RoundEvol
         </div>
       )}
 
+      {/* Trend Analysis */}
+      {rounds.length >= 2 && (
+        <div className="bg-gradient-to-br from-slate-50 to-white rounded-xl border border-slate-200 p-6">
+          <h3 className="font-semibold text-slate-900 mb-4">Trend Analysis</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <TrendChart 
+              data={confidenceTrend} 
+              label="Avg Confidence" 
+              color="#22c55e"
+            />
+            <TrendChart 
+              data={clusterTrend} 
+              label="Clusters" 
+              color="#8b5cf6"
+            />
+            <TrendChart 
+              data={consensusTrend} 
+              label="Consensus Areas" 
+              color="#10b981"
+            />
+            <TrendChart 
+              data={divergenceTrend} 
+              label="Divergence Areas" 
+              color="#f59e0b"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Round Timeline */}
       <div className="space-y-0">
         <h3 className="font-semibold text-slate-900 mb-4">Round Timeline</h3>
-        {rounds.map((round, index) => (
-          <RoundCard 
-            key={round.round_number} 
-            round={round} 
-            isLast={index === rounds.length - 1}
-          />
-        ))}
+        {rounds.map((round, index) => {
+          const matchingRoundResult = roundResults?.find(
+            rr => rr.round_number === round.round_number
+          );
+          return (
+            <RoundCard 
+              key={round.round_number} 
+              round={round}
+              roundResult={matchingRoundResult}
+              isLast={index === rounds.length - 1}
+              expertPersonas={expertPersonas}
+            />
+          );
+        })}
       </div>
     </div>
   );

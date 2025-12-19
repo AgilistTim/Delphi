@@ -45,6 +45,19 @@ interface RoundData {
   }>;
 }
 
+interface ExpertPersona {
+  name: string;
+  role: string;
+  agent_id?: string;
+}
+
+interface RoundResult {
+  round_number: number;
+  synthesis: RoundData;
+  expert_responses: ExpertPosition[];
+  contrarian_responses: ContrarianObservation[];
+}
+
 interface DelphiReport {
   prompt?: {
     question?: string;
@@ -70,8 +83,10 @@ interface DelphiReport {
     consensus_type_reasoning?: string;
   };
   expert_positions?: ExpertPosition[];
+  expert_personas?: ExpertPersona[];
   contrarian_observations?: ContrarianObservation[];
   round_history?: RoundData[];
+  round_results?: RoundResult[];
 }
 
 interface RunPageProps {
@@ -388,14 +403,18 @@ export default function RunPage({ params }: RunPageProps) {
               <CardContent>
                 <RoundEvolution 
                   rounds={report.round_history || []}
+                  roundResults={report.round_results}
                   convergenceMetrics={report.convergence_analysis ? {
                     position_stability: report.convergence_analysis.position_stability || 0,
                     consensus_clarity: report.convergence_analysis.consensus_clarity || 0,
                     confidence_spread: report.convergence_analysis.confidence_spread || 0,
                     citation_overlap: report.convergence_analysis.citation_overlap || 0,
+                    disagreement_index: report.convergence_analysis.disagreement_index,
+                    minority_persistence: report.convergence_analysis.minority_persistence,
                     rounds_completed: report.convergence_analysis.rounds_completed || 0,
                     termination_reason: report.convergence_analysis.termination_reason || "unknown",
                   } : undefined}
+                  expertPersonas={report.expert_personas}
                 />
               </CardContent>
             </Card>

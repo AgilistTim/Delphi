@@ -20,6 +20,54 @@ export type EpistemicStance =
   | 'contrarian_challenger'
   | 'evidence_synthesizer';
 
+export interface ExpertResponse {
+  position: string;
+  reasoning: string;
+  research_reasoning?: string;
+  experience_reasoning?: string;
+  conditional_factors?: string[];
+  falsifiability?: string;
+  strongest_counter_argument?: string;
+  justification_basis?: JustificationBasis;
+  confidence: number;
+  sources: Citation[];
+  expertise_area?: string;
+  agent_id?: string;
+}
+
+export interface ContrarianResponse {
+  critique: string;
+  alternative_framework: string;
+  blind_spots: string[];
+  counter_evidence?: Array<{ title: string; url: string; summary: string }>;
+  agent_id?: string;
+}
+
+export interface ExpertCluster {
+  theme: string;
+  positions: string[];
+  expert_ids: string[];
+  confidence_range: [number, number];
+  supporting_sources: Citation[];
+}
+
+export interface RoundSynthesis {
+  round_number: number;
+  clusters: ExpertCluster[];
+  consensus_areas: string[];
+  divergence_areas: string[];
+  average_confidence: number;
+  participation_count: number;
+  key_insights: string[];
+}
+
+export interface RoundResult {
+  round_number: number;
+  synthesis: RoundSynthesis;
+  expert_responses: ExpertResponse[];
+  contrarian_responses: ContrarianResponse[];
+}
+
 export interface DelphiReport {
   prompt: {
     question: string;
@@ -31,26 +79,8 @@ export interface DelphiReport {
     confidence_level: number;
     key_evidence: Citation[];
   };
-  expert_positions: Array<{
-    position: string;
-    reasoning: string;
-    research_reasoning?: string;
-    experience_reasoning?: string;
-    conditional_factors?: string[];
-    falsifiability?: string;
-    strongest_counter_argument?: string;
-    justification_basis?: JustificationBasis;
-    confidence: number;
-    sources: Citation[];
-    expertise_area?: string;
-    agent_id?: string;
-  }>;
-  contrarian_observations: Array<{
-    critique: string;
-    alternative_framework: string;
-    blind_spots: string[];
-    counter_evidence?: Array<{ title: string; url: string; summary: string }>;
-  }>;
+  expert_positions: ExpertResponse[];
+  contrarian_observations: ContrarianResponse[];
   dissenting_views: Array<{
     position: string;
     expert_ids: string[];
@@ -69,7 +99,8 @@ export interface DelphiReport {
     consensus_type?: ConsensusType;
     consensus_type_reasoning?: string;
   };
-  round_history: any[];
+  round_history: RoundSynthesis[];
+  round_results?: RoundResult[];
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }

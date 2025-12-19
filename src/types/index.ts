@@ -104,6 +104,14 @@ export interface RoundSynthesis {
   key_insights: string[];
 }
 
+// Full Round Result with verbatim responses (for detailed review)
+export interface RoundResult {
+  round_number: number;
+  synthesis: RoundSynthesis;
+  expert_responses: ExpertResponse[];
+  contrarian_responses: ContrarianResponse[];
+}
+
 export interface ExpertCluster {
   theme: string;
   positions: string[];
@@ -185,6 +193,7 @@ export interface DelphiReport {
   }[];
   convergence_analysis: ConvergenceMetrics;
   round_history: RoundSynthesis[];
+  round_results?: RoundResult[];
   generated_at: Date;
 }
 
@@ -240,4 +249,4 @@ export interface SearchResult {
   date?: string;
   summary: string;
   relevance_score?: number;
-}                                        
+}                                                        
