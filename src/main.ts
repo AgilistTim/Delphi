@@ -25,6 +25,7 @@ import {
   QuestionAnalysis,
   CounterfactualRiskAnalysis,
   OppositionalCase,
+  AssumptionExposure,
   ConvergenceMetrics
 } from './types/index.js';
 
@@ -562,6 +563,13 @@ export class DelphiAgent {
     // This is adversarial advocacy, not risk analysis
     const oppositionalCase = await this.generateOppositionalCase(consensusSummary);
 
+    // Generate assumption exposures (runs AFTER oppositional case, preserves tension without rebuttal)
+    // Forces consensus to acknowledge what would have to be wrong for OC to be correct
+    const assumptionExposures = await this.generateAssumptionExposures(
+      oppositionalCase,
+      finalRound.expertResponses
+    );
+
     // Map personas to expert_personas format with agent_id linkage
     const expertPersonas = personas.map((persona, index) => ({
       name: persona.name,
@@ -605,6 +613,7 @@ export class DelphiAgent {
       cost_summary: costTracker?.getSummary(),
       counterfactual_risk: counterfactualRisk,
       oppositional_case: oppositionalCase,
+      assumption_exposures: assumptionExposures,
       generated_at: new Date(),
       failed_experts: failedExperts
     } as any;
@@ -918,6 +927,102 @@ Be sharp. Be direct. Argue as if lives, money, or careers depend on the opposite
   }
 
   /**
+   * Generate assumption exposures - what must fail for the oppositional case to win
+   * Runs AFTER oppositional case, preserves tension without rebuttal
+   * No defense, no dismissal, just assumption exposure
+   */
+  private async generateAssumptionExposures(
+    oppositionalCase: OppositionalCase,
+    expertResponses: ExpertResponse[]
+  ): Promise<AssumptionExposure[]> {
+    console.log(`\n🔍 Generating assumption exposures...`);
+
+    const expertSummaries = expertResponses.map((r, i) => ({
+      label: r.expertise_area || `Expert ${i + 1}`,
+      position: r.position,
+      reasoning: r.reasoning?.substring(0, 300) || ''
+    }));
+
+    const prompt = `You are exposing assumptions. Your job is to identify what assumption in each expert's position would FAIL if the oppositional case is correct.
+
+OPPOSITIONAL CASE (the alternative position):
+"${oppositionalCase.opposite_position}"
+
+Argument: "${oppositionalCase.argument}"
+
+EXPERT POSITIONS:
+${expertSummaries.map((e, i) => `${i + 1}. ${e.label}: "${e.position}"`).join('\n')}
+
+YOUR TASK:
+For each expert, state ONE assumption in their position that would fail if the oppositional case is correct.
+
+RULES:
+- State the assumption directly. No defense. No rebuttal. No "this is unlikely".
+- Do NOT argue why the assumption is valid
+- Do NOT dismiss the oppositional case
+- Do NOT use: "however", "but", "although", "unlikely", "probably still", "nevertheless"
+- Do NOT reconcile the positions
+- Each assumption must be a single clear sentence
+
+Generate your response as a JSON array:
+[
+  {"expert_label": "Expert label from above", "failed_assumption": "The assumption that would fail if the oppositional case is correct"},
+  ...
+]
+
+Be direct. State what must be true for the consensus to hold - and therefore what breaks if the oppositional case wins.`;
+
+    try {
+      const completion = await safeChatCompletion(this.openai, {
+        model: this.config.openai.model,
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You expose assumptions without defending them. You do not rebut. You do not dismiss. You state what must be true for each position to hold.' 
+          },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.5,
+        max_tokens: 1000
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        try {
+          const jsonMatch = content.match(/\[[\s\S]*\]/);
+          const jsonString = jsonMatch ? jsonMatch[0] : content;
+          const parsed = JSON.parse(jsonString);
+          
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            console.log(`   ✅ Generated ${parsed.length} assumption exposures`);
+            return parsed.map((item: { expert_label?: string; failed_assumption?: string }) => ({
+              expert_label: item.expert_label || 'Unknown Expert',
+              failed_assumption: item.failed_assumption || 'Assumption unavailable'
+            }));
+          }
+        } catch {
+          console.warn('   ⚠️ Failed to parse assumption exposures JSON, using fallback');
+        }
+      }
+    } catch (error) {
+      console.error('Assumption exposure generation failed:', error);
+    }
+
+    // Fallback - generic assumption exposure
+    return this.generateFallbackAssumptionExposures(expertResponses);
+  }
+
+  /**
+   * Generate fallback assumption exposures when AI generation fails
+   */
+  private generateFallbackAssumptionExposures(expertResponses: ExpertResponse[]): AssumptionExposure[] {
+    return expertResponses.map((r, i) => ({
+      expert_label: r.expertise_area || `Expert ${i + 1}`,
+      failed_assumption: `This position assumes the conditions that produced the consensus will persist. If those conditions change, the position inverts.`
+    }));
+  }
+
+  /**
    * Save the report to file
    */
   private async saveReport(report: DelphiReport): Promise<void> {
@@ -1025,6 +1130,15 @@ Be sharp. Be direct. Argue as if lives, money, or careers depend on the opposite
       content += `${oc.outperformance_scenario}\n\n`;
       content += `### Uncomfortable Implication\n`;
       content += `> ${oc.uncomfortable_implication}\n\n`;
+    }
+
+    // PROMINENT: Assumption Exposures (What Must Fail for the Oppositional Case to Win)
+    if (report.assumption_exposures && report.assumption_exposures.length > 0) {
+      content += `## 🔍 If the Oppositional Case Is Correct...\n\n`;
+      content += `*What assumption in each expert's position would fail:*\n\n`;
+      report.assumption_exposures.forEach((ae) => {
+        content += `**${ae.expert_label}:** ${ae.failed_assumption}\n\n`;
+      });
     }
 
     // PROMINENT: Questions to Consider (Stress Tests for Human Reader)
