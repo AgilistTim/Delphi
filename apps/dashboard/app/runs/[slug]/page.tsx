@@ -43,6 +43,13 @@ interface CounterfactualRiskAnalysis {
   early_warning_signal: string;
 }
 
+interface OppositionalCase {
+  opposite_position: string;
+  argument: string;
+  outperformance_scenario: string;
+  uncomfortable_implication: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   critique?: string;
@@ -142,6 +149,7 @@ interface DelphiReport {
   round_results?: RoundResult[];
   cost_summary?: CostSummary;
   counterfactual_risk?: CounterfactualRiskAnalysis;
+  oppositional_case?: OppositionalCase;
 }
 
 interface RunPageProps {
@@ -475,6 +483,43 @@ export default function RunPage({ params }: RunPageProps) {
                     <div className="p-4 bg-white rounded-lg border border-red-100">
                       <div className="text-sm font-semibold text-red-800 mb-2">Early warning signal:</div>
                       <p className="text-slate-700">{report.counterfactual_risk.early_warning_signal}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Oppositional Case (Deliberate Counterpoint) */}
+            {report.oppositional_case && (
+              <Card className="mt-6 border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50">
+                <CardHeader>
+                  <CardTitle className="text-amber-800 flex items-center gap-2">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Oppositional Case (Deliberate Counterpoint)
+                  </CardTitle>
+                  <p className="text-sm text-amber-700 mt-1">
+                    The strongest defensible argument against the dominant conclusion:
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-white rounded-lg border border-amber-100">
+                      <div className="text-sm font-semibold text-amber-800 mb-2">The Opposite Position:</div>
+                      <p className="text-slate-700 font-medium">{report.oppositional_case.opposite_position}</p>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border border-amber-100">
+                      <div className="text-sm font-semibold text-amber-800 mb-2">Argument:</div>
+                      <p className="text-slate-700">{report.oppositional_case.argument}</p>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border border-amber-100">
+                      <div className="text-sm font-semibold text-amber-800 mb-2">When This Position Outperforms:</div>
+                      <p className="text-slate-700">{report.oppositional_case.outperformance_scenario}</p>
+                    </div>
+                    <div className="p-4 bg-white rounded-lg border border-amber-100">
+                      <div className="text-sm font-semibold text-amber-800 mb-2">Uncomfortable Implication:</div>
+                      <p className="text-slate-700 italic">{report.oppositional_case.uncomfortable_implication}</p>
                     </div>
                   </div>
                 </CardContent>

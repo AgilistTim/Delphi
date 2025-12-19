@@ -301,6 +301,43 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontWeight: 'bold',
   },
+  oppositionalSection: {
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#fef3c7',
+    borderRadius: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f59e0b',
+  },
+  oppositionalTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#92400e',
+  },
+  oppositionalSubtitle: {
+    fontSize: 9,
+    color: '#78350f',
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  oppositionalItem: {
+    marginBottom: 10,
+  },
+  oppositionalLabel: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: '#92400e',
+    marginBottom: 3,
+  },
+  oppositionalText: {
+    fontSize: 10,
+    color: '#451a03',
+    lineHeight: 1.4,
+    paddingLeft: 8,
+    borderLeftWidth: 2,
+    borderLeftColor: '#fcd34d',
+  },
 });
 
 interface Source {
@@ -375,6 +412,13 @@ interface CounterfactualRiskAnalysis {
   early_warning_signal: string;
 }
 
+interface OppositionalCase {
+  opposite_position: string;
+  argument: string;
+  outperformance_scenario: string;
+  uncomfortable_implication: string;
+}
+
 interface ContrarianObservation {
   reasoning_stress_tests?: ReasoningStressTests;
   challenge?: string;
@@ -417,6 +461,7 @@ interface DelphiReportData {
   contrarian_observations?: ContrarianObservation[];
   dissenting_views?: (string | DissentingView)[];
   counterfactual_risk?: CounterfactualRiskAnalysis;
+  oppositional_case?: OppositionalCase;
 }
 
 interface DelphiReportPDFProps {
@@ -603,6 +648,31 @@ export default function DelphiReportPDF({ report }: DelphiReportPDFProps) {
             <View style={styles.stressTestItem}>
               <Text style={styles.stressTestLabel}>Early warning signal:</Text>
               <Text style={styles.stressTestText}>{report.counterfactual_risk.early_warning_signal}</Text>
+            </View>
+          </View>
+        )}
+
+        {report.oppositional_case && (
+          <View style={styles.oppositionalSection}>
+            <Text style={styles.oppositionalTitle}>Oppositional Case (Deliberate Counterpoint)</Text>
+            <Text style={styles.oppositionalSubtitle}>
+              The strongest defensible argument against the dominant conclusion:
+            </Text>
+            <View style={styles.oppositionalItem}>
+              <Text style={styles.oppositionalLabel}>The Opposite Position:</Text>
+              <Text style={styles.oppositionalText}>{report.oppositional_case.opposite_position}</Text>
+            </View>
+            <View style={styles.oppositionalItem}>
+              <Text style={styles.oppositionalLabel}>Argument:</Text>
+              <Text style={styles.oppositionalText}>{report.oppositional_case.argument}</Text>
+            </View>
+            <View style={styles.oppositionalItem}>
+              <Text style={styles.oppositionalLabel}>When This Position Outperforms:</Text>
+              <Text style={styles.oppositionalText}>{report.oppositional_case.outperformance_scenario}</Text>
+            </View>
+            <View style={styles.oppositionalItem}>
+              <Text style={styles.oppositionalLabel}>Uncomfortable Implication:</Text>
+              <Text style={styles.oppositionalText}>{report.oppositional_case.uncomfortable_implication}</Text>
             </View>
           </View>
         )}

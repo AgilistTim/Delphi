@@ -24,6 +24,7 @@ import {
   APIConfig,
   QuestionAnalysis,
   CounterfactualRiskAnalysis,
+  OppositionalCase,
   ConvergenceMetrics
 } from './types/index.js';
 
@@ -557,6 +558,10 @@ export class DelphiAgent {
       convergenceMetrics
     );
 
+    // Generate oppositional case (runs AFTER counterfactual analysis, BEFORE PDF assembly)
+    // This is adversarial advocacy, not risk analysis
+    const oppositionalCase = await this.generateOppositionalCase(consensusSummary);
+
     // Map personas to expert_personas format with agent_id linkage
     const expertPersonas = personas.map((persona, index) => ({
       name: persona.name,
@@ -599,6 +604,7 @@ export class DelphiAgent {
       round_results: roundResultsForReport,
       cost_summary: costTracker?.getSummary(),
       counterfactual_risk: counterfactualRisk,
+      oppositional_case: oppositionalCase,
       generated_at: new Date(),
       failed_experts: failedExperts
     } as any;
@@ -819,6 +825,99 @@ CONSTRAINTS:
   }
 
   /**
+   * Generate oppositional case - argues the opposite of the dominant conclusion
+   * Runs AFTER counterfactual analysis, BEFORE PDF assembly
+   * This is NOT risk analysis - it's adversarial advocacy
+   */
+  private async generateOppositionalCase(
+    consensusSummary: { final_position: string; confidence_level: number }
+  ): Promise<OppositionalCase> {
+    console.log(`\n⚔️ Generating oppositional case...`);
+
+    const prompt = `You are an oppositional advocate. Your job is to produce the strongest defensible case AGAINST a dominant conclusion.
+
+You do NOT balance. You do NOT reconcile. You do NOT hedge. You do NOT seek truth.
+
+Your role is adversarial advocacy - argue the opposite position as if it were correct, rational, and defensible.
+
+DOMINANT CONCLUSION:
+"${consensusSummary.final_position}"
+
+YOUR TASK:
+1. State the OPPOSITE position in one clear sentence (logically negate the dominant conclusion)
+2. Write ONE coherent argument for why this opposite position is correct
+3. Describe ONE real-world scenario where this opposite position would outperform the consensus
+4. State ONE uncomfortable implication that the consensus avoids acknowledging
+
+Generate your response in JSON format:
+
+{
+  "opposite_position": "The negated position stated clearly in one sentence",
+  "argument": "A coherent 2-3 sentence argument for why the opposite conclusion is correct, rational, and defensible",
+  "outperformance_scenario": "A specific, concrete scenario where following the opposite position would produce better outcomes than following the consensus",
+  "uncomfortable_implication": "One sharp sentence about what the consensus avoids saying"
+}
+
+FORBIDDEN:
+- Do NOT use: "may", "might", "could possibly", "it depends", "however", "balanced", "on the other hand"
+- Do NOT reconcile the positions
+- Do NOT add safety disclaimers
+- Do NOT mention you are role-playing
+- Do NOT use phrases like "as an AI", "I can't", "it's important to note", "both sides"
+- Do NOT reference ethics, safety, or uncertainty
+
+Be sharp. Be direct. Argue as if lives, money, or careers depend on the opposite position being correct.`;
+
+    try {
+      const completion = await safeChatCompletion(this.openai, {
+        model: this.config.openai.model,
+        messages: [
+          { role: 'system', content: 'You are an oppositional advocate. Your job is to argue the opposite of any conclusion as if it were correct. You never balance, reconcile, or hedge. You are trying to persuade a hostile but intelligent decision-maker.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.8,
+        max_tokens: 600
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          const jsonString = jsonMatch ? jsonMatch[0] : content;
+          const parsed = JSON.parse(jsonString);
+          
+          console.log(`   ✅ Oppositional case generated`);
+          return {
+            opposite_position: parsed.opposite_position || 'Position unavailable',
+            argument: parsed.argument || 'Argument unavailable',
+            outperformance_scenario: parsed.outperformance_scenario || 'Scenario unavailable',
+            uncomfortable_implication: parsed.uncomfortable_implication || 'Implication unavailable'
+          };
+        } catch {
+          console.warn('   ⚠️ Failed to parse oppositional case JSON, using fallback');
+        }
+      }
+    } catch (error) {
+      console.error('Oppositional case generation failed:', error);
+    }
+
+    // Fallback - generic oppositional framing
+    return this.generateFallbackOppositionalCase();
+  }
+
+  /**
+   * Generate fallback oppositional case when AI generation fails
+   */
+  private generateFallbackOppositionalCase(): OppositionalCase {
+    return {
+      opposite_position: `The opposite of the dominant conclusion deserves serious consideration.`,
+      argument: `The dominant position succeeds by defining the problem in a way that guarantees its own answer. Reframe the problem and the conclusion inverts. The consensus reflects the biases of those who shaped the question, not the reality of the situation.`,
+      outperformance_scenario: `In environments where the implicit assumptions of the consensus break down - rapid change, adversarial conditions, or resource constraints - the opposite approach often proves more robust precisely because it doesn't depend on favorable conditions.`,
+      uncomfortable_implication: `The consensus exists because it's comfortable to believe, not because it's correct.`
+    };
+  }
+
+  /**
    * Save the report to file
    */
   private async saveReport(report: DelphiReport): Promise<void> {
@@ -911,6 +1010,21 @@ CONSTRAINTS:
       content += `**Plausible failure:** ${cfr.plausible_failure}\n\n`;
       content += `**Why it's missed early:** ${cfr.why_missed_early}\n\n`;
       content += `**Early warning signal:** ${cfr.early_warning_signal}\n\n`;
+    }
+
+    // PROMINENT: Oppositional Case (Deliberate Counterpoint)
+    if (report.oppositional_case) {
+      const oc = report.oppositional_case;
+      content += `## ⚔️ Oppositional Case (Deliberate Counterpoint)\n\n`;
+      content += `*The strongest defensible argument against the dominant conclusion:*\n\n`;
+      content += `### The Opposite Position\n`;
+      content += `> ${oc.opposite_position}\n\n`;
+      content += `### Argument\n`;
+      content += `${oc.argument}\n\n`;
+      content += `### When This Position Outperforms\n`;
+      content += `${oc.outperformance_scenario}\n\n`;
+      content += `### Uncomfortable Implication\n`;
+      content += `> ${oc.uncomfortable_implication}\n\n`;
     }
 
     // PROMINENT: Questions to Consider (Stress Tests for Human Reader)
