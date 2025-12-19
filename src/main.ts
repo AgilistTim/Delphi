@@ -22,7 +22,9 @@ import {
   DelphiReport,
   AgentConfig,
   APIConfig,
-  QuestionAnalysis
+  QuestionAnalysis,
+  CounterfactualRiskAnalysis,
+  ConvergenceMetrics
 } from './types/index.js';
 
 // Load environment variables
@@ -549,6 +551,12 @@ export class DelphiAgent {
     // Identify dissenting views
     const dissentingViews = this.identifyDissentingViews(finalRound.synthesis, allExpertResponses);
 
+    // Generate counterfactual risk analysis (runs AFTER consensus classification, BEFORE PDF assembly)
+    const counterfactualRisk = await this.generateCounterfactualRiskAnalysis(
+      consensusSummary,
+      convergenceMetrics
+    );
+
     // Map personas to expert_personas format with agent_id linkage
     const expertPersonas = personas.map((persona, index) => ({
       name: persona.name,
@@ -590,6 +598,7 @@ export class DelphiAgent {
       round_history: roundResults.map(r => r.synthesis),
       round_results: roundResultsForReport,
       cost_summary: costTracker?.getSummary(),
+      counterfactual_risk: counterfactualRisk,
       generated_at: new Date(),
       failed_experts: failedExperts
     } as any;
@@ -702,6 +711,114 @@ Generate a JSON response with:
   }
 
   /**
+   * Generate counterfactual risk analysis - stress tests the dominant conclusion
+   * Runs AFTER consensus classification, BEFORE PDF assembly
+   * Completely question-agnostic - frames everything relative to "the dominant conclusion"
+   */
+  private async generateCounterfactualRiskAnalysis(
+    consensusSummary: { final_position: string; confidence_level: number },
+    convergenceMetrics: ConvergenceMetrics
+  ): Promise<CounterfactualRiskAnalysis> {
+    console.log(`\n🔮 Generating counterfactual risk analysis...`);
+
+    const consensusNature = convergenceMetrics.consensus_classification?.nature || 'mixed';
+    const consensusType = convergenceMetrics.consensus_type;
+
+    const prompt = `You are a risk analyst stress-testing a dominant conclusion from a multi-expert deliberation process.
+
+CONTEXT:
+- Consensus Type: ${consensusType}
+- Consensus Nature: ${consensusNature}
+- Confidence Level: ${consensusSummary.confidence_level.toFixed(1)}/10
+- Dominant Position: "${consensusSummary.final_position}"
+
+YOUR TASK:
+Generate a counterfactual risk analysis that stress-tests this dominant conclusion. You must be completely question-agnostic - do NOT reference the specific topic. Frame everything relative to "the dominant conclusion" or "this position."
+
+Generate exactly three items in JSON format:
+
+{
+  "plausible_failure": "If the dominant conclusion is wrong, describe ONE specific, realistic way it could fail in the real world. Be concrete about the failure mechanism.",
+  "why_missed_early": "Explain why this failure would NOT be detected quickly. What makes it invisible or easy to dismiss initially?",
+  "early_warning_signal": "Identify ONE specific, observable indicator that would signal this failure is occurring. This should be something measurable or noticeable."
+}
+
+CONSTRAINTS:
+- Do NOT reference the specific topic or question
+- Do NOT use hedging language ("may", "might", "could possibly", "it depends")
+- Be direct and assertive
+- Each response should be 1-3 sentences
+- Focus on structural/systemic failure modes, not surface-level concerns`;
+
+    try {
+      const completion = await safeChatCompletion(this.openai, {
+        model: this.config.openai.model,
+        messages: [
+          { role: 'system', content: 'You are a risk analyst who identifies how confident conclusions can fail. Be direct, specific, and avoid hedging.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          const jsonString = jsonMatch ? jsonMatch[0] : content;
+          const parsed = JSON.parse(jsonString);
+          
+          console.log(`   ✅ Counterfactual risk analysis generated`);
+          return {
+            plausible_failure: parsed.plausible_failure || 'Analysis unavailable',
+            why_missed_early: parsed.why_missed_early || 'Analysis unavailable',
+            early_warning_signal: parsed.early_warning_signal || 'Analysis unavailable'
+          };
+        } catch {
+          console.warn('   ⚠️ Failed to parse counterfactual JSON, using fallback');
+        }
+      }
+    } catch (error) {
+      console.error('Counterfactual analysis generation failed:', error);
+    }
+
+    // Fallback based on consensus type
+    return this.generateFallbackCounterfactual(consensusType);
+  }
+
+  /**
+   * Generate fallback counterfactual analysis when AI generation fails
+   */
+  private generateFallbackCounterfactual(
+    consensusType: string
+  ): CounterfactualRiskAnalysis {
+    const fallbacks: Record<string, CounterfactualRiskAnalysis> = {
+      strong: {
+        plausible_failure: 'Strong consensus often masks underlying assumptions that become invalid when context shifts. The dominant conclusion fails when the implicit conditions it depends on no longer hold.',
+        why_missed_early: 'High agreement creates confidence that discourages re-examination. Dissenting signals are dismissed as outliers rather than early warnings.',
+        early_warning_signal: 'Watch for edge cases where the conclusion produces unexpected results, or stakeholders who quietly stop following the recommended approach.'
+      },
+      conditional: {
+        plausible_failure: 'The conditions that make this conclusion valid are more fragile than acknowledged. When one key condition fails, the entire framework collapses.',
+        why_missed_early: 'Conditional conclusions encourage "it depends" thinking that delays recognition of systematic failure patterns.',
+        early_warning_signal: 'Monitor whether the stated conditions are actually being met in practice, not just assumed to be present.'
+      },
+      divergent: {
+        plausible_failure: 'The dominant position among divergent views wins by default rather than merit. Minority positions may contain crucial insights being overlooked.',
+        why_missed_early: 'Divergence is treated as unresolved disagreement rather than a signal that the problem is being framed incorrectly.',
+        early_warning_signal: 'Track whether minority viewpoints gain traction over time, or whether the dominant view requires increasingly complex justifications.'
+      },
+      operational: {
+        plausible_failure: 'Operational consensus prioritizes what works now over what will work later. The dominant conclusion optimizes for current constraints that will change.',
+        why_missed_early: 'Short-term success reinforces the approach, making it harder to see accumulating long-term costs.',
+        early_warning_signal: 'Look for growing technical debt, workarounds, or exceptions that indicate the approach is becoming harder to maintain.'
+      }
+    };
+
+    return fallbacks[consensusType] || fallbacks['strong'];
+  }
+
+  /**
    * Save the report to file
    */
   private async saveReport(report: DelphiReport): Promise<void> {
@@ -785,6 +902,15 @@ Generate a JSON response with:
       content += `- **Nature:** ${cc.nature.charAt(0).toUpperCase() + cc.nature.slice(1)}\n`;
       content += `- **Insight Yield:** ${cc.insight_yield.charAt(0).toUpperCase() + cc.insight_yield.slice(1)}\n`;
       content += `- **Risk:** ${cc.risk_statement}\n\n`;
+    }
+
+    // PROMINENT: Counterfactual Risk Analysis (If the Dominant Conclusion Is Wrong)
+    if (report.counterfactual_risk) {
+      const cfr = report.counterfactual_risk;
+      content += `## ⚠️ Counterfactual Risk (If the Dominant Conclusion Is Wrong)\n\n`;
+      content += `**Plausible failure:** ${cfr.plausible_failure}\n\n`;
+      content += `**Why it's missed early:** ${cfr.why_missed_early}\n\n`;
+      content += `**Early warning signal:** ${cfr.early_warning_signal}\n\n`;
     }
 
     // PROMINENT: Questions to Consider (Stress Tests for Human Reader)

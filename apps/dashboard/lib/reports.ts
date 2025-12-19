@@ -97,6 +97,13 @@ export interface ConsensusClassification {
   risk_statement: string;
 }
 
+// Counterfactual Risk Analysis - stress tests the dominant conclusion
+export interface CounterfactualRiskAnalysis {
+  plausible_failure: string;
+  why_missed_early: string;
+  early_warning_signal: string;
+}
+
 export interface ContrarianResponse {
   // NEW: Four epistemic stress tests
   reasoning_stress_tests?: ReasoningStressTests;
@@ -170,6 +177,7 @@ export interface DelphiReport {
   round_history: RoundSynthesis[];
   round_results?: RoundResult[];
   cost_summary?: CostSummary;
+  counterfactual_risk?: CounterfactualRiskAnalysis;
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }
