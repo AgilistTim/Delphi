@@ -1,6 +1,14 @@
 import OpenAI from 'openai';
 import { safeChatCompletion } from './openai-helpers.js';
 
+export type EpistemicStance = 
+  | 'status_quo_defender'      // Defends conventional wisdom and established practices
+  | 'methodology_skeptic'      // Questions the approach, framing, and assumptions
+  | 'implementation_realist'   // Focuses on practical barriers and real-world constraints
+  | 'ethics_maximalist'        // Prioritizes ethical concerns and potential harms
+  | 'contrarian_challenger'    // Explicitly argues against the emerging majority position
+  | 'evidence_synthesizer';    // Focuses on integrating diverse evidence sources
+
 export interface PersonaSpec {
   name: string;
   role: string;
@@ -10,6 +18,8 @@ export interface PersonaSpec {
   education_history: string;
   justification: string;
   description: string;
+  epistemic_stance: EpistemicStance;
+  initial_position_template?: string;
   // Enhanced demographic details
   age?: number;
   gender?: string;
@@ -41,6 +51,24 @@ REQUIRED FIELDS:
 - justification: Why this expert is essential for this specific question
 - description: 2-3 paragraphs on their professional background, worldview, and approach
 
+EPISTEMIC STANCE (CRITICAL - assigns structural role in deliberation):
+- epistemic_stance: MUST be one of these exact values:
+  * "status_quo_defender" - Defends conventional wisdom, established practices, and mainstream consensus
+  * "methodology_skeptic" - Questions the approach, framing, assumptions, and how the question is posed
+  * "implementation_realist" - Focuses on practical barriers, real-world constraints, and what actually works
+  * "ethics_maximalist" - Prioritizes ethical concerns, potential harms, and values-based reasoning
+  * "contrarian_challenger" - Explicitly argues against the emerging majority position (REQUIRED: at least 1 persona)
+  * "evidence_synthesizer" - Focuses on integrating diverse evidence sources and identifying gaps
+
+- initial_position_template: A brief statement (1-2 sentences) of the DISTINCT initial position this expert will likely take. These MUST be meaningfully different across personas - avoid convergence toward safe/moderate positions.
+
+STANCE DISTRIBUTION REQUIREMENTS (CRITICAL):
+- You MUST include at least ONE "contrarian_challenger" who will argue against the majority
+- You MUST include at least ONE "methodology_skeptic" who questions the framing
+- The remaining personas should be distributed across other stances
+- NO TWO personas should have the same epistemic_stance unless n > 6
+- initial_position_templates MUST represent genuinely different viewpoints, not variations of the same safe answer
+
 DEMOGRAPHIC DETAILS:
 - age: Realistic age (number between 30-70)
 - gender: Gender identity
@@ -56,7 +84,7 @@ DIVERSITY REQUIREMENTS:
 - Ensure diverse representation across gender, nationality, age, and organization types
 - Include perspectives from different sectors (academic, industry, government, non-profit)
 - Balance between established veterans and emerging voices
-- Include at least one contrarian or unconventional perspective
+- The contrarian_challenger should have credentials that make their dissent credible, not dismissible
 
 Return as a JSON array with all the keys listed above.`;
 

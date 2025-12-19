@@ -12,6 +12,13 @@ export interface Citation {
 
 export type JustificationBasis = 'research_dominant' | 'experience_dominant' | 'balanced' | 'theoretical';
 export type ConsensusType = 'strong' | 'conditional' | 'operational' | 'divergent';
+export type EpistemicStance = 
+  | 'status_quo_defender'
+  | 'methodology_skeptic'
+  | 'implementation_realist'
+  | 'ethics_maximalist'
+  | 'contrarian_challenger'
+  | 'evidence_synthesizer';
 
 export interface DelphiReport {
   prompt: {
@@ -30,6 +37,8 @@ export interface DelphiReport {
     research_reasoning?: string;
     experience_reasoning?: string;
     conditional_factors?: string[];
+    falsifiability?: string;
+    strongest_counter_argument?: string;
     justification_basis?: JustificationBasis;
     confidence: number;
     sources: Citation[];
@@ -53,6 +62,8 @@ export interface DelphiReport {
     confidence_spread: number;
     consensus_clarity: number;
     citation_overlap: number;
+    disagreement_index?: number;
+    minority_persistence?: number;
     rounds_completed: number;
     termination_reason: TerminationReason;
     consensus_type?: ConsensusType;
