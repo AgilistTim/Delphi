@@ -28,6 +28,7 @@ import {
   AssumptionExposure,
   DecisionFork,
   RegimeSplitAnalysis,
+  RegimeSignals,
   ConvergenceMetrics
 } from './types/index.js';
 
@@ -580,6 +581,10 @@ export class DelphiAgent {
     // Maps two explicit futures - forces reader to confront which regime they believe they are entering
     const regimeSplit = await this.generateRegimeSplitAnalysis(consensusSummary, oppositionalCase);
 
+    // Generate 12-month reality check (runs AFTER regime split, as the final temporal grounding step)
+    // Anchors regimes in observable near-term signals - turns philosophical dilemma into monitorable decision
+    const regimeSignals = await this.generateRegimeSignals(consensusSummary, oppositionalCase, regimeSplit);
+
     // Map personas to expert_personas format with agent_id linkage
     const expertPersonas = personas.map((persona, index) => ({
       name: persona.name,
@@ -626,6 +631,7 @@ export class DelphiAgent {
       assumption_exposures: assumptionExposures,
       decision_fork: decisionFork,
       regime_split: regimeSplit,
+      regime_signals: regimeSignals,
       generated_at: new Date(),
       failed_experts: failedExperts
     } as any;
@@ -1191,6 +1197,112 @@ RULES:
   }
 
   /**
+   * Generate 12-Month Reality Check - anchors regimes in observable near-term signals
+   * Runs AFTER regime split, as the final temporal grounding step
+   * Turns philosophical dilemma into monitorable decision
+   * No judgement, no recommendation - just observables
+   */
+  private async generateRegimeSignals(
+    consensusSummary: { final_position: string; confidence_level: number },
+    oppositionalCase: OppositionalCase,
+    regimeSplit: RegimeSplitAnalysis
+  ): Promise<RegimeSignals> {
+    console.log(`\n📊 Generating 12-month reality check signals...`);
+
+    const prompt = `You are identifying near-term observable signals that would indicate which regime is emerging. Your job is to provide concrete, monitorable indicators - NOT predictions or judgements.
+
+CONSENSUS POSITION (Regime A):
+"${consensusSummary.final_position}"
+- Scarce resource: ${regimeSplit.consensus_regime.scarce_resource}
+- Winning organization: ${regimeSplit.consensus_regime.winning_organization}
+
+OPPOSITIONAL POSITION (Regime B):
+"${oppositionalCase.opposite_position}"
+- Scarce resource: ${regimeSplit.oppositional_regime.scarce_resource}
+- Winning organization: ${regimeSplit.oppositional_regime.winning_organization}
+
+YOUR TASK:
+For EACH regime, identify 2-3 observable signals that would indicate that regime is unfolding within the next 12 months.
+
+Generate your response in JSON format:
+
+{
+  "consensus_signals": [
+    "First observable signal that Regime A (consensus) is winning",
+    "Second observable signal that Regime A (consensus) is winning",
+    "Third observable signal that Regime A (consensus) is winning"
+  ],
+  "oppositional_signals": [
+    "First observable signal that Regime B (oppositional) is winning",
+    "Second observable signal that Regime B (oppositional) is winning",
+    "Third observable signal that Regime B (oppositional) is winning"
+  ]
+}
+
+RULES:
+- Each signal must be OBSERVABLE within 12 months (not abstract or long-term)
+- Each signal must be CONCRETE (something you could actually see, measure, or verify)
+- Each signal must be ONE sentence
+- Do NOT judge which regime is more likely
+- Do NOT recommend which signals to watch more closely
+- Do NOT hedge with "may" or "might"
+- Focus on: market behavior, organizational outcomes, competitive dynamics, measurable results`;
+
+    try {
+      const completion = await safeChatCompletion(this.openai, {
+        model: this.config.openai.model,
+        messages: [
+          { role: 'system', content: 'You are a strategic intelligence analyst. Your job is to identify concrete, observable signals that would indicate which future is emerging. You never predict, recommend, or hedge. You identify what to watch.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 400
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        try {
+          const jsonMatch = content.match(/\{[\s\S]*\}/);
+          const jsonString = jsonMatch ? jsonMatch[0] : content;
+          const parsed = JSON.parse(jsonString);
+          
+          console.log(`   ✅ 12-month reality check generated`);
+          return {
+            consensus_signals: parsed.consensus_signals?.slice(0, 3) || ['Signal unavailable'],
+            oppositional_signals: parsed.oppositional_signals?.slice(0, 3) || ['Signal unavailable'],
+            intro_statement: 'If you had to know which regime is emerging within the next year, these are the signals that would matter most.'
+          };
+        } catch {
+          console.warn('   ⚠️ Failed to parse regime signals JSON, using fallback');
+        }
+      }
+    } catch (error) {
+      console.error('Regime signals generation failed:', error);
+    }
+
+    return this.generateFallbackRegimeSignals();
+  }
+
+  /**
+   * Generate fallback regime signals when AI generation fails
+   */
+  private generateFallbackRegimeSignals(): RegimeSignals {
+    return {
+      consensus_signals: [
+        'Hybrid approaches consistently outperform pure alternatives in measurable outcomes.',
+        'Organizations that invested in integration report higher returns than those that went all-in on transformation.',
+        'Market leaders maintain their positions by adapting incrementally rather than disrupting themselves.'
+      ],
+      oppositional_signals: [
+        'New entrants with radically different approaches capture significant market share from incumbents.',
+        'Cost curves for the new approach drop faster than incumbents can adapt their existing operations.',
+        'Organizations that moved aggressively early report competitive advantages that late movers cannot replicate.'
+      ],
+      intro_statement: 'If you had to know which regime is emerging within the next year, these are the signals that would matter most.'
+    };
+  }
+
+  /**
    * Save the report to file
    */
   private async saveReport(report: DelphiReport): Promise<void> {
@@ -1339,6 +1451,25 @@ RULES:
       
       content += `---\n\n`;
       content += `**${rs.closing_statement}**\n\n`;
+    }
+
+    // 12-MONTH REALITY CHECK: Anchors regimes in observable near-term signals
+    if (report.regime_signals) {
+      const sig = report.regime_signals;
+      content += `## 📊 12-Month Reality Check\n\n`;
+      content += `*${sig.intro_statement}*\n\n`;
+      
+      content += `### Signals Regime A (Consensus World) is unfolding\n\n`;
+      sig.consensus_signals.forEach((signal, idx) => {
+        content += `${idx + 1}. ${signal}\n`;
+      });
+      content += `\n`;
+      
+      content += `### Signals Regime B (Oppositional World) is unfolding\n\n`;
+      sig.oppositional_signals.forEach((signal, idx) => {
+        content += `${idx + 1}. ${signal}\n`;
+      });
+      content += `\n`;
     }
 
     // PROMINENT: Questions to Consider (Stress Tests for Human Reader)
