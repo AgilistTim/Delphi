@@ -70,15 +70,22 @@ interface QuestionAnalysis {
   refined_question?: string;
 }
 
+interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost_usd?: number;
+}
+
 interface CostSummary {
   total_tokens: number;
-  total_input_tokens: number;
-  total_output_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
   estimated_total_cost_usd: number;
   openai_calls: number;
   perplexity_calls: number;
-  breakdown_by_agent: Record<string, { tokens: number; cost: number; calls: number }>;
-  breakdown_by_round: Record<number, { tokens: number; cost: number }>;
+  breakdown_by_agent_type: Record<string, TokenUsage>;
+  breakdown_by_round: Record<number, TokenUsage>;
 }
 
 interface DelphiReport {
@@ -543,16 +550,16 @@ export default function RunPage({ params }: RunPageProps) {
                     </div>
                   </div>
 
-                  {Object.keys(report.cost_summary.breakdown_by_agent).length > 0 && (
+                  {report.cost_summary.breakdown_by_agent_type && Object.keys(report.cost_summary.breakdown_by_agent_type).length > 0 && (
                     <div>
                       <div className="text-sm text-slate-500 mb-2">Cost by Agent Type</div>
                       <div className="space-y-2">
-                        {Object.entries(report.cost_summary.breakdown_by_agent).map(([agent, data]) => (
+                        {Object.entries(report.cost_summary.breakdown_by_agent_type).map(([agent, data]) => (
                           <div key={agent} className="flex items-center justify-between p-2 bg-slate-50 rounded">
                             <span className="text-sm font-medium text-slate-700 capitalize">{agent.replace(/_/g, ' ')}</span>
                             <div className="text-sm text-slate-600">
-                              <span className="font-semibold">${data.cost.toFixed(4)}</span>
-                              <span className="text-slate-400 ml-2">({data.tokens.toLocaleString()} tokens, {data.calls} calls)</span>
+                              <span className="font-semibold">${(data.estimated_cost_usd || 0).toFixed(4)}</span>
+                              <span className="text-slate-400 ml-2">({data.total_tokens.toLocaleString()} tokens)</span>
                             </div>
                           </div>
                         ))}
