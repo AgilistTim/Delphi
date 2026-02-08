@@ -1,4 +1,5 @@
 import { ExpertResponse, RoundSynthesis, ConvergenceMetrics, Citation, ConsensusType, ConsensusClassification, ConsensusNature, InsightYield } from '../types/index.js';
+import { semanticSimilarity } from './embedding-similarity.js';
 
 export class ConvergenceTracker {
   private roundHistory: RoundSynthesis[] = [];
@@ -264,34 +265,67 @@ export class ConvergenceTracker {
    */
   private calculatePositionStability(): number {
     if (this.roundHistory.length < 2) {
-      return 1.0; // Only one round, perfect stability
+      return 1.0;
     }
 
+    return this.calculatePositionStabilitySync();
+  }
+
+  private calculatePositionStabilitySync(): number {
     let totalExperts = 0;
     let stableExperts = 0;
 
     this.expertHistories.forEach((history) => {
       if (history.length >= 2) {
         totalExperts++;
-        
-        // Compare last two positions using semantic similarity
         const lastPosition = history[history.length - 1].position.toLowerCase();
         const previousPosition = history[history.length - 2].position.toLowerCase();
-        
-        // Simple similarity check - count overlapping key terms
+
         const lastWords = new Set(lastPosition.split(/\s+/).filter(word => word.length > 3));
         const previousWords = new Set(previousPosition.split(/\s+/).filter(word => word.length > 3));
-        
         const overlap = new Set([...lastWords].filter(word => previousWords.has(word)));
         const similarity = overlap.size / Math.max(lastWords.size, previousWords.size);
-        
-        if (similarity > 0.7) { // 70% similarity threshold
+
+        if (similarity > 0.7) {
           stableExperts++;
         }
       }
     });
 
     return totalExperts > 0 ? stableExperts / totalExperts : 1.0;
+  }
+
+  async calculatePositionStabilityWithEmbeddings(): Promise<number> {
+    if (this.roundHistory.length < 2) {
+      return 1.0;
+    }
+
+    let totalExperts = 0;
+    let totalSimilarity = 0;
+
+    const entries = Array.from(this.expertHistories.entries());
+    for (const [, history] of entries) {
+      if (history.length >= 2) {
+        totalExperts++;
+        const lastPosition = history[history.length - 1].position;
+        const previousPosition = history[history.length - 2].position;
+
+        try {
+          const similarity = await semanticSimilarity(lastPosition, previousPosition);
+          if (similarity > 0.8) {
+            totalSimilarity++;
+          }
+        } catch {
+          const lastWords = new Set(lastPosition.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+          const prevWords = new Set(previousPosition.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+          const overlap = new Set([...lastWords].filter(w => prevWords.has(w)));
+          const fallback = overlap.size / Math.max(lastWords.size, prevWords.size);
+          if (fallback > 0.7) totalSimilarity++;
+        }
+      }
+    }
+
+    return totalExperts > 0 ? totalSimilarity / totalExperts : 1.0;
   }
 
   /**
@@ -543,4 +577,4 @@ export class ConvergenceTracker {
   getExpertEvolution(): Map<string, ExpertResponse[]> {
     return new Map(this.expertHistories);
   }
-}                                                                
+}                                                                                                                                

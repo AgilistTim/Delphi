@@ -17,6 +17,8 @@ interface CLIArgs {
   help?: boolean;
   healthCheck?: boolean;
   interactive?: boolean;
+  guided?: boolean;
+  api?: boolean;
 }
 
 function parseArgs(): CLIArgs {
@@ -56,6 +58,13 @@ function parseArgs(): CLIArgs {
       case '-i':
         parsed.interactive = true;
         break;
+      case '--guided':
+      case '-g':
+        parsed.guided = true;
+        break;
+      case '--api':
+        parsed.api = true;
+        break;
       default:
         if (!parsed.question && !arg.startsWith('-')) {
           parsed.question = arg;
@@ -89,6 +98,8 @@ OPTIONS:
   -e, --experts <number>    Number of expert agents (default: 5, max: 10)
   -r, --rounds <number>     Maximum rounds (default: 3, max: 5)
   -i, --interactive         Run in interactive mode
+  -g, --guided             Enable guided mode (pause between rounds for human input)
+  --api                    Start the REST API server
   -h, --help               Show this help message
   --health-check           Check API connectivity
 
@@ -153,7 +164,8 @@ async function runInteractive(): Promise<void> {
 async function runDelphiProcess(
   prompt: DelphiPrompt, 
   expertCount: number = 5, 
-  maxRounds: number = 3
+  maxRounds: number = 3,
+  guided: boolean = false
 ): Promise<void> {
   try {
     const delphi = new DelphiAgent();
@@ -161,6 +173,23 @@ async function runDelphiProcess(
     // Set configuration
     if (maxRounds !== 3) {
       delphi.setMaxRounds(maxRounds);
+    }
+
+    // Enable guided mode (#2) - pause between rounds for human input
+    if (guided) {
+      delphi.setGuidedMode(true, async (roundNumber, synthesis) => {
+        console.log(`\n--- Guided Mode: Round ${roundNumber} complete ---`);
+        console.log(`Clusters: ${synthesis.clusters.length}`);
+        console.log(`Consensus areas: ${synthesis.consensus_areas.length}`);
+        console.log(`Divergence areas: ${synthesis.divergence_areas.length}`);
+        console.log(`\nOptions:`);
+        console.log(`  [Enter]  Continue to next round`);
+        console.log(`  [text]   Provide guidance for experts`);
+        console.log(`  [skip]   Skip remaining rounds\n`);
+        const input = await promptUser('Your input: ');
+        if (!input || input.toLowerCase() === 'skip') return null;
+        return input;
+      });
     }
 
     // Validate expert count
@@ -228,6 +257,17 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Handle API server mode
+  if (args.api) {
+    const { createDelphiAPI } = await import('./api.js');
+    const port = parseInt(process.env.DELPHI_API_PORT || '3002', 10);
+    const app = createDelphiAPI(port);
+    app.listen(port, () => {
+      console.log(`Delphi REST API listening on http://localhost:${port}`);
+    });
+    return;
+  }
+
   // Handle interactive mode
   if (args.interactive) {
     await runInteractive();
@@ -263,7 +303,8 @@ async function main(): Promise<void> {
   await runDelphiProcess(
     prompt,
     args.experts || 5,
-    args.rounds || 3
+    args.rounds || 3,
+    args.guided || false
   );
 }
 

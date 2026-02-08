@@ -185,6 +185,76 @@ export interface RoundResult {
   contrarian_responses: ContrarianResponse[];
 }
 
+// Cross-examination (#1) - direct expert-to-expert exchanges
+export interface CrossExamination {
+  round: number;
+  challenger_role: string;
+  responder_role: string;
+  challenge: string;
+  response: string;
+  topic: string;
+  resolution?: string;
+}
+
+// Evidence quality scoring (#3)
+export interface EvidenceQuality {
+  source_type: 'academic' | 'government' | 'news' | 'industry' | 'unknown';
+  recency_score: number;
+  domain_authority: number;
+  overall_score: number;
+}
+
+export interface ScoredCitation extends Citation {
+  quality: EvidenceQuality;
+}
+
+// Decision Canvas (#4) - actionable guidance from analysis
+export interface DecisionCanvas {
+  consensus_action: string;
+  oppositional_action: string;
+  reversibility_assessment: string;
+  optionality_analysis: string;
+  time_pressure: string;
+  monitoring_plan: string;
+}
+
+// Question decomposition (#5)
+export interface SubQuestion {
+  question: string;
+  rationale: string;
+  dependencies: string[];
+}
+
+export interface QuestionDecomposition {
+  original_question: string;
+  is_complex: boolean;
+  sub_questions: SubQuestion[];
+}
+
+// Structured uncertainty (#6)
+export interface StructuredUncertainty {
+  expert_role: string;
+  confidence_by_claim: Array<{ claim: string; confidence: number }>;
+  conditional_confidence: Array<{ condition: string; adjusted_confidence: number }>;
+  key_assumptions: string[];
+}
+
+// Prior analysis reference (#7)
+export interface PriorAnalysisReference {
+  slug: string;
+  question: string;
+  consensus_position: string;
+  relevance_score: number;
+  generated_at: string;
+}
+
+// Evidence contrarian (#11)
+export interface EvidenceContrarianResult {
+  counter_evidence: Array<{ title: string; url: string; summary: string }>;
+  strength_assessment: 'weak' | 'moderate' | 'strong';
+  summary: string;
+}
+
 export interface DelphiReport {
   prompt: {
     question: string;
@@ -228,6 +298,12 @@ export interface DelphiReport {
   decision_fork?: DecisionFork;
   regime_split?: RegimeSplitAnalysis;
   regime_signals?: RegimeSignals;
+  question_decomposition?: QuestionDecomposition;
+  cross_examinations?: CrossExamination[];
+  evidence_contrarian?: EvidenceContrarianResult;
+  structured_uncertainties?: StructuredUncertainty[];
+  prior_analyses?: PriorAnalysisReference[];
+  decision_canvas?: DecisionCanvas;
   generated_at: string | Date;
   failed_experts?: Array<{ role: string; error: string }>;
 }
@@ -243,6 +319,7 @@ export interface RunSummary {
   terminationReason: TerminationReason;
   supportLevel?: string;
   confidenceLevel?: number;
+  consensusType?: ConsensusType;
 }
 
 function getOutputDir(): string {
@@ -316,6 +393,7 @@ export function listReports(): RunSummary[] {
         confidenceLevel: report?.consensus_summary?.confidence_level
       };
 
+      summary.consensusType = report?.convergence_analysis?.consensus_type;
       summaries.push(summary);
     } catch {
       // skip malformed file
