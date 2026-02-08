@@ -29,6 +29,8 @@ interface PortfolioEntry {
   expertCount: number;
   themes: string[];
   position: string;
+  cost: number;
+  tokens: number;
 }
 
 export default async function PortfolioPage() {
@@ -57,7 +59,9 @@ export default async function PortfolioPage() {
       rounds: r.roundsCompleted,
       expertCount: report?.expert_positions?.length ?? 0,
       themes: themes.slice(0, 3),
-      position: report?.consensus_summary?.final_position ?? ""
+      position: report?.consensus_summary?.final_position ?? "",
+      cost: report?.cost_summary?.estimated_total_cost_usd ?? 0,
+      tokens: report?.cost_summary?.total_tokens ?? 0,
     };
   });
 
@@ -79,6 +83,14 @@ export default async function PortfolioPage() {
   const commonThemes = Object.entries(allThemes)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
+
+  const totalCost = entries.reduce((sum, e) => sum + e.cost, 0);
+  const totalTokens = entries.reduce((sum, e) => sum + e.tokens, 0);
+  let runningCost = 0;
+  const costTimeline = entries.slice().reverse().map(e => {
+    runningCost += e.cost;
+    return { slug: e.slug, question: e.question, date: e.date, cost: e.cost, cumulative: runningCost };
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50">
@@ -171,6 +183,46 @@ export default async function PortfolioPage() {
                     <Badge className={getConsensusColor(entry.consensusType)}>
                       {entry.consensusType}
                     </Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Cost Trends */}
+        {entries.length > 0 && totalCost > 0 && (
+          <Card className="mb-8">
+            <CardContent className="p-5">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Cost Trends</h3>
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="p-3 bg-green-50 rounded-lg border border-green-200 text-center">
+                  <p className="text-xl font-bold text-green-800">${totalCost.toFixed(4)}</p>
+                  <p className="text-xs text-green-600">Total Cost</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg text-center">
+                  <p className="text-xl font-bold text-slate-900">{totalTokens.toLocaleString()}</p>
+                  <p className="text-xs text-slate-500">Total Tokens</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg text-center">
+                  <p className="text-xl font-bold text-slate-900">${entries.length > 0 ? (totalCost / entries.length).toFixed(4) : "0"}</p>
+                  <p className="text-xs text-slate-500">Avg Cost/Run</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {costTimeline.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-3">
+                    <div className="w-32 truncate text-xs text-slate-500" title={item.question}>
+                      {new Date(item.date).toLocaleDateString()}
+                    </div>
+                    <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-500"
+                        style={{ width: `${totalCost > 0 ? (item.cost / totalCost) * 100 : 0}%`, minWidth: item.cost > 0 ? "4px" : "0" }}
+                      />
+                    </div>
+                    <span className="text-xs font-medium text-slate-600 w-16 text-right">${item.cost.toFixed(4)}</span>
+                    <span className="text-xs text-slate-400 w-20 text-right">cum: ${item.cumulative.toFixed(4)}</span>
                   </div>
                 ))}
               </div>
