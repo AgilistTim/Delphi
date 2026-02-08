@@ -18,28 +18,36 @@
     "format": "prettier --write src/**/*.ts",
     "health": "tsx src/cli.ts --health-check"
   },
-  "keywords": ["ai", "delphi", "consensus", "agents", "expert-systems"],
+  "keywords": [
+    "ai",
+    "delphi",
+    "consensus",
+    "agents",
+    "expert-systems"
+  ],
   "author": "Tim",
   "license": "MIT",
   "dependencies": {
-    "openai": "^4.73.1",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "markdown-it": "^14.1.0",
+    "openai": "^4.73.1",
     "uuid": "^11.0.3",
-    "zod": "^3.24.1",
-    "markdown-it": "^14.1.0"
+    "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.10.2",
     "@types/uuid": "^10.0.0",
-    "@types/markdown-it": "^14.1.2",
-    "typescript": "^5.7.2",
-    "tsx": "^4.19.2",
-    "vitest": "^2.1.8",
-    "eslint": "^9.17.0",
     "@typescript-eslint/eslint-plugin": "^8.18.1",
     "@typescript-eslint/parser": "^8.18.1",
-    "prettier": "^3.4.2"
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
   },
   "engines": {
     "node": ">=18.0.0"

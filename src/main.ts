@@ -3,7 +3,6 @@ import OpenAI from 'openai';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { safeChatCompletion } from './utils/openai-helpers.js';
-// import MarkdownIt from 'markdown-it'; // Unused for now
 
 import { PerplexityTool } from './tools/perplexity.js';
 import { ExpertAgent } from './agents/expert.js';
@@ -13,6 +12,16 @@ import { ConvergenceTracker } from './utils/convergence-tracker.js';
 import { generatePersonas, PersonaSpec } from './utils/persona-generator.js';
 import { CostTracker } from './utils/cost-tracker.js';
 import { refineQuestion, formatQuestionAnalysisForExperts } from './utils/question-refiner.js';
+import { runCrossExamination } from './utils/cross-examination.js';
+import { decomposeQuestion } from './utils/question-decomposer.js';
+import { scoreCitations } from './utils/evidence-quality.js';
+import { generateDecisionCanvas } from './utils/decision-canvas.js';
+import { generateStructuredUncertainty } from './utils/structured-uncertainty.js';
+import { findRelatedAnalyses, formatPriorAnalysesForExperts } from './utils/prior-analysis.js';
+import { searchCounterEvidence } from './utils/evidence-contrarian.js';
+import { scopedSearch } from './utils/search-scoper.js';
+import { setOpenAIInstance } from './utils/embedding-similarity.js';
+import { initializeSignalTracker, saveSignalTracker } from './utils/retrospective.js';
 
 import {
   DelphiPrompt,
@@ -23,13 +32,20 @@ import {
   AgentConfig,
   APIConfig,
   QuestionAnalysis,
+  QuestionDecomposition,
+  CrossExamination,
   CounterfactualRiskAnalysis,
   OppositionalCase,
   AssumptionExposure,
   DecisionFork,
+  DecisionCanvas,
   RegimeSplitAnalysis,
   RegimeSignals,
-  ConvergenceMetrics
+  ConvergenceMetrics,
+  PriorAnalysisReference,
+  StructuredUncertainty,
+  EvidenceContrarianResult,
+  ExpertPersona
 } from './types/index.js';
 
 // Load environment variables
@@ -44,6 +60,8 @@ export class DelphiAgent {
   private contrarians: ContrarianAgent[] = [];
   private config: APIConfig;
   private maxRounds: number = 3;
+  private guidedMode: boolean = false;
+  private guidedModeCallback: ((roundNumber: number, synthesis: RoundSynthesis) => Promise<string | null>) | undefined;
 
   constructor(config?: Partial<APIConfig>) {
     // Initialize API configuration
@@ -76,6 +94,9 @@ export class DelphiAgent {
     // Initialize orchestrator and tracker
     this.orchestrator = new OrchestratorAgent(this.openai);
     this.convergenceTracker = new ConvergenceTracker();
+
+    // Initialize embedding similarity with OpenAI instance (#9)
+    setOpenAIInstance(this.openai);
 
     console.log('🧠 DelphiAgent initialized successfully');
   }
@@ -119,14 +140,56 @@ export class DelphiAgent {
         console.warn(`   ⚠️  Question analysis failed, continuing without:`, error);
       }
 
-      // Enhance prompt context with question analysis if available
-      const enhancedPrompt: DelphiPrompt = questionAnalysis ? {
+      // Phase 0b: Question Decomposition (#5)
+      let questionDecomposition: QuestionDecomposition | undefined;
+      try {
+        console.log(`\n🧩 Phase 0b: Checking question complexity...`);
+        questionDecomposition = await decomposeQuestion(this.openai, prompt.question, this.config.openai.model);
+        if (questionDecomposition.is_complex) {
+          console.log(`   ✅ Complex question detected: ${questionDecomposition.sub_questions.length} sub-questions identified`);
+          questionDecomposition.sub_questions.forEach((sq, i) => {
+            console.log(`   📎 Sub-Q${i + 1}: ${sq.question}`);
+          });
+        } else {
+          console.log(`   ✅ Question is focused, no decomposition needed`);
+        }
+      } catch (error) {
+        console.warn(`   ⚠️  Question decomposition failed, continuing without:`, error);
+      }
+
+      // Phase 0c: Prior Analysis Reference (#7)
+      let priorAnalyses: PriorAnalysisReference[] = [];
+      try {
+        console.log(`\n📚 Phase 0c: Searching for related prior analyses...`);
+        priorAnalyses = findRelatedAnalyses(prompt.question);
+        if (priorAnalyses.length > 0) {
+          console.log(`   ✅ Found ${priorAnalyses.length} related prior analyses`);
+          priorAnalyses.forEach(pa => {
+            console.log(`   📎 ${pa.slug} (relevance: ${(pa.relevance_score * 100).toFixed(0)}%)`);
+          });
+        } else {
+          console.log(`   ✅ No related prior analyses found`);
+        }
+      } catch (error) {
+        console.warn(`   ⚠️  Prior analysis search failed, continuing without:`, error);
+      }
+
+      // Enhance prompt context with question analysis, decomposition, and prior analyses
+      const contextParts: string[] = [prompt.context || ''];
+      if (questionAnalysis) {
+        contextParts.push(formatQuestionAnalysisForExperts(questionAnalysis));
+      }
+      if (questionDecomposition?.is_complex) {
+        contextParts.push(`\n## Question Decomposition\nThis is a complex question with the following sub-dimensions:\n${questionDecomposition.sub_questions.map((sq, i) => `${i + 1}. ${sq.question} (${sq.rationale})`).join('\n')}\n\nPlease consider all sub-dimensions in your response.`);
+      }
+      if (priorAnalyses.length > 0) {
+        contextParts.push(formatPriorAnalysesForExperts(priorAnalyses));
+      }
+
+      const enhancedPrompt: DelphiPrompt = {
         ...prompt,
-        context: [
-          prompt.context || '',
-          formatQuestionAnalysisForExperts(questionAnalysis)
-        ].filter(Boolean).join('\n\n')
-      } : prompt;
+        context: contextParts.filter(Boolean).join('\n\n')
+      };
 
       // Generate detailed expert personas using OpenAI
       const personas: PersonaSpec[] = await generatePersonas(this.openai, prompt.question, expertCount);
@@ -137,10 +200,13 @@ export class DelphiAgent {
       const contrarianCount = Math.min(2, Math.ceil(expertCount / 3));
       this.initializeContrarians(contrarianCount);
 
+      const allCrossExaminations: CrossExamination[] = [];
+
       const roundResults: {
         expertResponses: ExpertResponse[];
         synthesis: RoundSynthesis;
         contrarianResponses: ContrarianResponse[];
+        crossExaminations?: CrossExamination[];
         failedExperts?: { role: string; error: string }[];
       }[] = [];
 
@@ -155,13 +221,42 @@ export class DelphiAgent {
           round > 1 ? roundResults[round - 2].contrarianResponses : [],
           personas,
           agentLogs,
-          costTracker
+          costTracker,
+          questionAnalysis
         );
 
-        roundResults.push(roundResult);
+        // Cross-examination phase (#1) - run after round 1 synthesis
+        let crossExaminations: CrossExamination[] = [];
+        if (roundResult.synthesis.clusters.length >= 2) {
+          try {
+            console.log(`\n⚔️  Phase 2b: Cross-examination (direct expert-to-expert)`);
+            crossExaminations = await runCrossExamination(
+              this.openai,
+              roundResult.synthesis,
+              roundResult.expertResponses,
+              round
+            );
+            allCrossExaminations.push(...crossExaminations);
+            console.log(`   ✅ ${crossExaminations.length} cross-examinations completed`);
+          } catch (error) {
+            console.warn(`   ⚠️  Cross-examination failed, continuing:`, error);
+          }
+        }
+
+        roundResults.push({ ...roundResult, crossExaminations });
 
         // Track convergence
         this.convergenceTracker.addRound(roundResult.synthesis, roundResult.expertResponses);
+
+        // Embedding-based position stability check (#9)
+        if (round >= 2) {
+          try {
+            const embeddingStability = await this.convergenceTracker.calculatePositionStabilityWithEmbeddings();
+            console.log(`   📊 Embedding-based position stability: ${(embeddingStability * 100).toFixed(1)}%`);
+          } catch {
+            // Fallback to word-overlap is handled internally
+          }
+        }
 
         // Check for early termination
         if (round >= 2) {
@@ -171,6 +266,19 @@ export class DelphiAgent {
           } else if (this.convergenceTracker.hasStableDivergence()) {
             console.log(`🔄 Stable divergence detected after round ${round}`);
             break;
+          }
+        }
+
+        // Human-in-the-loop guided mode (#2)
+        if (this.guidedMode && this.guidedModeCallback && round < this.maxRounds) {
+          console.log(`\n⏸️  Guided Mode: Pausing for human input after round ${round}...`);
+          const userInput = await this.guidedModeCallback(round, roundResult.synthesis);
+          if (userInput) {
+            console.log(`   ✅ Human guidance received: "${userInput.substring(0, 80)}..."`);
+            enhancedPrompt.context = [
+              enhancedPrompt.context || '',
+              `\n---\n## Human Guidance (after round ${round})\n${userInput}`
+            ].filter(Boolean).join('\n\n');
           }
         }
 
@@ -184,7 +292,10 @@ export class DelphiAgent {
         roundResults,
         personas,
         questionAnalysis,
-        costTracker
+        costTracker,
+        questionDecomposition,
+        priorAnalyses,
+        allCrossExaminations
       );
       
       // Save report to file
@@ -278,7 +389,8 @@ export class DelphiAgent {
     previousContrarianResponses: ContrarianResponse[],
     personas: PersonaSpec[],
     agentLogs: any[],
-    costTracker?: CostTracker
+    costTracker?: CostTracker,
+    questionAnalysis?: QuestionAnalysis
   ): Promise<{
     expertResponses: ExpertResponse[];
     synthesis: RoundSynthesis;
@@ -286,20 +398,18 @@ export class DelphiAgent {
     failedExperts: { role: string; error: string }[];
   }> {
     // Phase 0: Perplexity background research (persona-targeted batch)
+    // Uses scoped search based on question characteristics (#10)
     console.log(`\n🔎 Phase 0: Perplexity background research (persona-targeted)`);
     
     // Group personas by expertise category
     const expertiseGroups = this.groupPersonasByExpertise(personas);
     const categoryResearch: Map<string, { content: string; citations: any[]; searchResults: any[] }> = new Map();
     
-    // Shared baseline research
+    // Shared baseline research - scoped by question characteristics (#10)
     let sharedBaseline: { content: string; citations: any[]; searchResults: any[] } = { content: '', citations: [], searchResults: [] };
     try {
-      console.log(`   [1/${expertiseGroups.size + 1}] Baseline search...`);
-      sharedBaseline = await this.perplexity.search({
-        query: prompt.question,
-        searchContextSize: 'low'
-      });
+      console.log(`   [1/${expertiseGroups.size + 1}] Baseline search (scoped by question analysis)...`);
+      sharedBaseline = await scopedSearch(this.perplexity, prompt.question, questionAnalysis);
       if (costTracker) {
         costTracker.addPerplexityCall(sharedBaseline.content.length / 4, this.config.perplexity.model);
       }
@@ -531,11 +641,15 @@ export class DelphiAgent {
       expertResponses: ExpertResponse[];
       synthesis: RoundSynthesis;
       contrarianResponses: ContrarianResponse[];
+      crossExaminations?: CrossExamination[];
       failedExperts?: { role: string; error: string }[];
     }>,
     personas: PersonaSpec[],
     questionAnalysis?: QuestionAnalysis,
-    costTracker?: CostTracker
+    costTracker?: CostTracker,
+    questionDecomposition?: QuestionDecomposition,
+    priorAnalyses?: PriorAnalysisReference[],
+    allCrossExaminations?: CrossExamination[]
   ) {
     console.log(`\n📝 Generating final report`);
 
@@ -544,7 +658,6 @@ export class DelphiAgent {
     const allExpertResponses = roundResults.flatMap(r => r.expertResponses);
     const allContrarianResponses = roundResults.flatMap(r => r.contrarianResponses);
     const convergenceMetrics = this.convergenceTracker.calculateMetrics();
-    const failedExperts = roundResults.flatMap(r => r.failedExperts || []);
 
     // Generate consensus summary using AI
     const consensusSummary = await this.generateConsensusSummaryWithSupport(
@@ -585,27 +698,104 @@ export class DelphiAgent {
     // Anchors regimes in observable near-term signals - turns philosophical dilemma into monitorable decision
     const regimeSignals = await this.generateRegimeSignals(consensusSummary, oppositionalCase, regimeSplit);
 
+    // Decision Canvas (#4) - synthesize into actionable guidance
+    let decisionCanvas: DecisionCanvas | undefined;
+    try {
+      console.log('\n\u{1F3AF} Generating Decision Canvas...');
+      decisionCanvas = await generateDecisionCanvas(
+        this.openai,
+        consensusSummary.final_position,
+        oppositionalCase,
+        regimeSplit,
+        regimeSignals,
+        counterfactualRisk,
+        assumptionExposures
+      );
+      console.log('   \u2705 Decision Canvas complete');
+    } catch (error) {
+      console.warn('   \u26A0\uFE0F  Decision Canvas generation failed:', error);
+    }
+
+    // Structured Uncertainty (#6) - decompose expert confidence
+    let structuredUncertainties: StructuredUncertainty[] = [];
+    try {
+      console.log('\n\u{1F4CA} Generating Structured Uncertainty analysis...');
+      structuredUncertainties = await generateStructuredUncertainty(
+        this.openai,
+        finalRound.expertResponses
+      );
+      console.log(`   \u2705 Structured uncertainty for ${structuredUncertainties.length} experts`);
+    } catch (error) {
+      console.warn('   \u26A0\uFE0F  Structured uncertainty failed:', error);
+    }
+
+    // Evidence Contrarian (#11) - search for counter-evidence
+    let evidenceContrarian: EvidenceContrarianResult | undefined;
+    try {
+      console.log('\n\u{1F50D} Searching for counter-evidence...');
+      evidenceContrarian = await searchCounterEvidence(
+        this.perplexity,
+        consensusSummary.final_position,
+        oppositionalCase?.opposite_position || consensusSummary.final_position
+      );
+      console.log(`   \u2705 Evidence contrarian: ${evidenceContrarian.strength_assessment}`);
+    } catch (error) {
+      console.warn('   \u26A0\uFE0F  Evidence contrarian search failed:', error);
+    }
+
+    // Evidence Quality Scoring (#3) - score all citations
+    try {
+      console.log('\n\u{1F4DD} Scoring evidence quality...');
+      const allCitations = finalRound.expertResponses.flatMap(r => r.sources);
+      const scored = scoreCitations(allCitations);
+      const avgScore = scored.length > 0
+        ? scored.reduce((sum, s) => sum + (s.evidence_quality?.overall_score ?? 0), 0) / scored.length
+        : 0;
+      console.log(`   \u2705 ${scored.length} citations scored (avg: ${avgScore.toFixed(2)})`)
+    } catch (error) {
+      console.warn('   \u26A0\uFE0F  Evidence quality scoring failed:', error);
+    }
+
+    // Signal Tracker (#7) - initialize for regime signals monitoring
+    try {
+      if (regimeSignals) {
+        console.log('\n\u{1F4E1} Initializing signal tracker...');
+        const tracker = initializeSignalTracker(
+          prompt.question,
+          regimeSignals.consensus_signals,
+          regimeSignals.oppositional_signals
+        );
+        saveSignalTracker(tracker);
+        console.log('   \u2705 Signal tracker saved for future monitoring');
+      }
+    } catch (error) {
+      console.warn('   \u26A0\uFE0F  Signal tracker initialization failed:', error);
+    }
+
     // Map personas to expert_personas format with agent_id linkage
-    const expertPersonas = personas.map((persona, index) => ({
-      name: persona.name,
-      role: persona.role,
-      domain_expertise: persona.domain_expertise,
-      perspective: persona.perspective,
-      work_background: persona.work_background,
-      education_history: persona.education_history,
-      justification: persona.justification,
-      description: persona.description,
-      age: persona.age,
-      gender: persona.gender,
-      nationality: persona.nationality,
-      location: persona.location,
-      years_experience: persona.years_experience,
-      organization_type: persona.organization_type,
-      notable_achievements: persona.notable_achievements,
-      potential_biases: persona.potential_biases,
-      communication_style: persona.communication_style,
-      agent_id: this.experts[index]?.getId()
-    }));
+    const expertPersonas: ExpertPersona[] = personas.map((persona, index) => {
+      const base: ExpertPersona = {
+        name: persona.name,
+        role: persona.role,
+        domain_expertise: persona.domain_expertise,
+        perspective: persona.perspective,
+        work_background: persona.work_background,
+        education_history: persona.education_history,
+        justification: persona.justification,
+        description: persona.description
+      };
+      if (persona.age !== undefined) base.age = persona.age;
+      if (persona.gender !== undefined) base.gender = persona.gender;
+      if (persona.nationality !== undefined) base.nationality = persona.nationality;
+      if (persona.location !== undefined) base.location = persona.location;
+      if (persona.years_experience !== undefined) base.years_experience = persona.years_experience;
+      if (persona.organization_type !== undefined) base.organization_type = persona.organization_type;
+      if (persona.notable_achievements !== undefined) base.notable_achievements = persona.notable_achievements;
+      if (persona.potential_biases !== undefined) base.potential_biases = persona.potential_biases;
+      if (persona.communication_style !== undefined) base.communication_style = persona.communication_style;
+      base.agent_id = this.experts[index]?.getId();
+      return base;
+    });
 
     const roundResultsForReport = roundResults.map((r, index) => ({
       round_number: index + 1,
@@ -614,9 +804,8 @@ export class DelphiAgent {
       contrarian_responses: r.contrarianResponses
     }));
 
-    const report: DelphiReport = {
+    const report: Record<string, unknown> = {
       prompt,
-      question_analysis: questionAnalysis,
       consensus_summary: consensusSummary,
       expert_positions: finalRound.expertResponses,
       expert_personas: expertPersonas,
@@ -625,18 +814,24 @@ export class DelphiAgent {
       convergence_analysis: convergenceMetrics,
       round_history: roundResults.map(r => r.synthesis),
       round_results: roundResultsForReport,
-      cost_summary: costTracker?.getSummary(),
-      counterfactual_risk: counterfactualRisk,
-      oppositional_case: oppositionalCase,
-      assumption_exposures: assumptionExposures,
-      decision_fork: decisionFork,
-      regime_split: regimeSplit,
-      regime_signals: regimeSignals,
-      generated_at: new Date(),
-      failed_experts: failedExperts
-    } as any;
+      generated_at: new Date()
+    };
+    if (questionAnalysis) report.question_analysis = questionAnalysis;
+    if (questionDecomposition) report.question_decomposition = questionDecomposition;
+    if (allCrossExaminations && allCrossExaminations.length > 0) report.cross_examinations = allCrossExaminations;
+    if (evidenceContrarian) report.evidence_contrarian = evidenceContrarian;
+    if (structuredUncertainties.length > 0) report.structured_uncertainties = structuredUncertainties;
+    if (priorAnalyses && priorAnalyses.length > 0) report.prior_analyses = priorAnalyses;
+    if (costTracker) report.cost_summary = costTracker.getSummary();
+    if (counterfactualRisk) report.counterfactual_risk = counterfactualRisk;
+    if (oppositionalCase) report.oppositional_case = oppositionalCase;
+    if (assumptionExposures) report.assumption_exposures = assumptionExposures;
+    if (decisionFork) report.decision_fork = decisionFork;
+    if (decisionCanvas) report.decision_canvas = decisionCanvas;
+    if (regimeSplit) report.regime_split = regimeSplit;
+    if (regimeSignals) report.regime_signals = regimeSignals;
 
-    return report;
+    return report as unknown as DelphiReport;
   }
 
   /**
@@ -1472,6 +1667,99 @@ RULES:
       content += `\n`;
     }
 
+    // CROSS-EXAMINATIONS (#1): Direct expert-to-expert exchanges
+    if (report.cross_examinations && report.cross_examinations.length > 0) {
+      content += `## \u2694\uFE0F Cross-Examinations\n\n`;
+      content += `*Direct expert-to-expert challenges on key disagreements:*\n\n`;
+      report.cross_examinations.forEach((cx, idx) => {
+        content += `### Exchange ${idx + 1} (Round ${cx.round_number})\n\n`;
+        content += `**${cx.examiner_role}** challenges **${cx.respondent_role}**:\n\n`;
+        content += `> ${cx.challenge}\n\n`;
+        content += `**Response:**\n`;
+        content += `${cx.response}\n\n`;
+
+      });
+    }
+
+    // DECISION CANVAS (#4): Actionable guidance from analysis
+    if (report.decision_canvas) {
+      const dc = report.decision_canvas;
+      content += `## \u{1F3AF} Decision Canvas\n\n`;
+      content += `*Actionable guidance synthesized from the full analysis:*\n\n`;
+      content += `### If Consensus Is Correct\n`;
+      content += `**Action:** ${dc.consensus_action}\n\n`;
+      content += `### If Oppositional Case Is Correct\n`;
+      content += `**Action:** ${dc.oppositional_action}\n\n`;
+      content += `### Reversibility Assessment\n`;
+      content += `${dc.reversibility_assessment}\n\n`;
+      content += `### Optionality Analysis\n`;
+      content += `${dc.optionality_analysis}\n\n`;
+      content += `### Time Pressure\n`;
+      content += `${dc.time_pressure}\n\n`;
+      content += `### Monitoring Plan\n`;
+      content += `${dc.monitoring_plan}\n\n`;
+    }
+
+    // QUESTION DECOMPOSITION (#5): Sub-questions identified
+    if (report.question_decomposition?.is_complex) {
+      content += `## \u{1F9E9} Question Decomposition\n\n`;
+      content += `*This complex question was decomposed into sub-dimensions:*\n\n`;
+      report.question_decomposition.sub_questions.forEach((sq, idx) => {
+        content += `${idx + 1}. **${sq.question}**\n`;
+        content += `   - *Rationale:* ${sq.rationale}\n`;
+        if (sq.dependency) {
+          content += `   - *Depends on:* ${sq.dependency}\n`;
+        }
+        content += `\n`;
+      });
+    }
+
+    // STRUCTURED UNCERTAINTY (#6): Decomposed confidence
+    if (report.structured_uncertainties && report.structured_uncertainties.length > 0) {
+      content += `## \u{1F4CA} Structured Uncertainty\n\n`;
+      content += `*Decomposed expert confidence by claim and assumption:*\n\n`;
+      report.structured_uncertainties.forEach((su, suIdx) => {
+        content += `### Expert ${suIdx + 1}\n\n`;
+        su.confidence_by_claim.forEach((c) => {
+          content += `- **${c.claim}**: ${c.confidence}/10\n`;
+        });
+        content += `\n`;
+        if (su.key_assumptions.length > 0) {
+          content += `**Key Assumptions:** ${su.key_assumptions.join('; ')}\n\n`;
+        }
+        su.conditional_confidence.forEach((cc) => {
+          content += `- *If ${cc.condition}:* confidence ${cc.confidence_if_true}/10 (true) or ${cc.confidence_if_false}/10 (false)\n`;
+        });
+        content += `\n`;
+      });
+    }
+
+    // EVIDENCE CONTRARIAN (#11): Counter-evidence search results
+    if (report.evidence_contrarian) {
+      const ec = report.evidence_contrarian;
+      content += `## \u{1F50D} Evidence Contrarian\n\n`;
+      content += `*Empirical evidence searched against the consensus position:*\n\n`;
+      content += `**Strength of counter-evidence:** ${ec.strength_assessment}\n\n`;
+      if (ec.evidence.length > 0) {
+        content += `**Counter-evidence found:**\n`;
+        ec.evidence.forEach((ce) => {
+          content += `- [${ce.title}](${ce.url})${ce.relevance ? ': ' + ce.relevance : ''}\n`;
+        });
+        content += `\n`;
+      }
+      content += `**Counter-position:** ${ec.counter_position}\n\n`;
+    }
+
+    // PRIOR ANALYSES (#7): Related historical analyses
+    if (report.prior_analyses && report.prior_analyses.length > 0) {
+      content += `## \u{1F4DA} Related Prior Analyses\n\n`;
+      content += `*Previously completed analyses that may provide relevant context:*\n\n`;
+      report.prior_analyses.forEach((pa) => {
+        content += `- **${pa.slug}** (relevance: ${(pa.relevance_score * 100).toFixed(0)}%)\n`;
+        content += `  ${pa.question}\n\n`;
+      });
+    }
+
     // PROMINENT: Questions to Consider (Stress Tests for Human Reader)
     if (report.contrarian_observations.length > 0) {
       const hasStressTests = report.contrarian_observations.some(c => c.reasoning_stress_tests);
@@ -1605,6 +1893,18 @@ RULES:
     formatted += `---\n\nYour response must demonstrate engagement with these stress tests. Ignoring them will be considered a weakness in your analysis.\n`;
 
     return formatted;
+  }
+
+  /**
+   * Enable guided mode (#2) - pauses after each round for human input
+   * The callback receives the round number and synthesis, returns user input or null to skip
+   */
+  setGuidedMode(
+    enabled: boolean,
+    callback?: (roundNumber: number, synthesis: RoundSynthesis) => Promise<string | null>
+  ): void {
+    this.guidedMode = enabled;
+    this.guidedModeCallback = callback;
   }
 
   /**

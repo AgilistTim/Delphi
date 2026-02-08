@@ -14,6 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <span style={{ fontWeight: 700 }}>🧠 DelphiAgent</span>
           <nav style={{ display: "flex", gap: 12, marginLeft: 8 }}>
             <a href="/" style={{ color: "#111827", textDecoration: "none" }}>Dashboard</a>
+            <a href="/portfolio" style={{ color: "#111827", textDecoration: "none" }}>Portfolio</a>
+            <a href="/signal-tracker" style={{ color: "#111827", textDecoration: "none" }}>Signal Tracker</a>
+            <a href="/calibration" style={{ color: "#111827", textDecoration: "none" }}>Calibration</a>
           </nav>
         </header>
         <main style={{ padding: 16, maxWidth: 1100, margin: "0 auto" }}>{children}</main>
