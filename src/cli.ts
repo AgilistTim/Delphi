@@ -224,14 +224,17 @@ async function runHealthCheck(): Promise<void> {
     const results = await delphi.healthCheck();
     
     console.log('Health Check Results:');
-    console.log(`- OpenAI API: ${results.openai ? '✅ Connected' : '❌ Failed'}`);
-    console.log(`- Perplexity API: ${results.perplexity ? '✅ Connected' : '❌ Failed'}`);
-    
-    if (results.openai && results.perplexity) {
+    console.log(`- Anthropic API: ${results.anthropic ? '✅ Connected' : '❌ Failed'}`);
+    console.log(`- Web Search (Anthropic): ${results.webSearch ? '✅ Connected' : '❌ Failed'}`);
+    console.log(`- OpenAI Embeddings: ${results.openai ? '✅ Connected' : '❌ Failed'}`);
+
+    if (results.anthropic && results.webSearch && results.openai) {
       console.log('\n🎉 All systems operational!');
       process.exit(0);
     } else {
-      console.log('\n⚠️  Some services are not available. Check your API keys and network connection.');
+      console.log(
+        '\n⚠️  Some services are not available. Check your API keys and network connection.'
+      );
       process.exit(1);
     }
     

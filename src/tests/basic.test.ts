@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { PerplexityTool } from '../tools/perplexity.js';
+import { WebSearchTool } from '../tools/web-search.js';
 import { ConvergenceTracker } from '../utils/convergence-tracker.js';
 import { ExpertResponseSchema, ContrarianResponseSchema } from '../types/index.js';
 
@@ -8,20 +8,19 @@ vi.mock('dotenv', () => ({
   config: vi.fn()
 }));
 
-describe('PerplexityTool', () => {
-  let perplexity: PerplexityTool;
+describe('WebSearchTool', () => {
+  let webSearch: WebSearchTool;
 
   beforeEach(() => {
-    perplexity = new PerplexityTool('test-key', 'test-model');
+    webSearch = new WebSearchTool();
   });
 
   it('should initialize with correct configuration', () => {
-    expect(perplexity).toBeDefined();
+    expect(webSearch).toBeDefined();
   });
 
-  it('should handle search query formatting', async () => {
-    // This would require mocking axios, but demonstrates the test structure
-    expect(true).toBe(true);
+  it('should be an instance of WebSearchTool', () => {
+    expect(webSearch).toBeInstanceOf(WebSearchTool);
   });
 });
 
@@ -147,19 +146,17 @@ describe('Schema Validation', () => {
 
 describe('Configuration Validation', () => {
   it('should handle missing API keys gracefully', () => {
-    // Test environment variable validation
+    const oldAnthropic = process.env.ANTHROPIC_API_KEY;
     const oldOpenAI = process.env.OPENAI_API_KEY;
-    const oldPerplexity = process.env.PERPLEXITY_API_KEY;
-    
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.PERPLEXITY_API_KEY;
 
-    // This would test DelphiAgent initialization
-    // For now, we'll just verify the environment is properly reset
-    
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+
+    // Placeholder for future DelphiAgent constructor test.
+
+    process.env.ANTHROPIC_API_KEY = oldAnthropic;
     process.env.OPENAI_API_KEY = oldOpenAI;
-    process.env.PERPLEXITY_API_KEY = oldPerplexity;
-    
+
     expect(true).toBe(true);
   });
 });

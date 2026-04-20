@@ -1,11 +1,13 @@
-import OpenAI from 'openai';
-import { safeChatCompletion } from './openai-helpers.js';
 import { QuestionDecomposition } from '../types/index.js';
+import { invokeModel, parseJsonFromText } from '../llm/invoke.js';
+import type { CostTracker } from './cost-tracker.js';
+
+const DECOMPOSER_SYSTEM =
+  'You are a question analyst. Determine if questions need decomposition for thorough analysis. Return valid JSON only.';
 
 export async function decomposeQuestion(
-  openai: OpenAI,
   question: string,
-  model: string = 'gpt-4o'
+  costTracker?: CostTracker
 ): Promise<QuestionDecomposition> {
   const prompt = `Analyze this question and determine if it is a complex multi-faceted question that should be decomposed into sub-questions for deeper analysis.
 
@@ -33,21 +35,18 @@ Return JSON:
 }`;
 
   try {
-    const completion = await safeChatCompletion(openai, {
-      model,
-      messages: [
-        { role: 'system', content: 'You are a question analyst. Determine if questions need decomposition for thorough analysis. Return valid JSON only.' },
-        { role: 'user', content: prompt }
-      ],
+    const result = await invokeModel({
+      tier: 'light',
+      label: 'decomposer',
+      system: DECOMPOSER_SYSTEM,
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 800,
       temperature: 0.3,
-      max_tokens: 800
+      costTracker
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) return { is_complex: false, sub_questions: [], interaction_notes: '' };
-
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+    const parsed = parseJsonFromText<any>(result.text);
+    if (!parsed) return { is_complex: false, sub_questions: [], interaction_notes: '' };
 
     return {
       is_complex: parsed.is_complex ?? false,

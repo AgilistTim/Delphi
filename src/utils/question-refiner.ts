@@ -1,7 +1,6 @@
-import OpenAI from 'openai';
-import { safeChatCompletion } from './openai-helpers.js';
 import { QuestionAnalysis } from '../types/index.js';
-import { CostTracker } from './cost-tracker.js';
+import { invokeModel, parseJsonFromText } from '../llm/invoke.js';
+import type { CostTracker } from './cost-tracker.js';
 
 const REFINER_SYSTEM_PROMPT = `You are a Question Refiner for a Delphi consensus process. Your job is to analyze the user's raw question and extract structured metadata that will help the expert panel provide better, more targeted responses.
 
@@ -21,56 +20,37 @@ Be concise. Each constraint/unknown/assumption should be one short sentence.
 Output valid JSON only, no markdown.`;
 
 export async function refineQuestion(
-  openai: OpenAI,
   question: string,
-  model: string = 'gpt-4o',
   costTracker?: CostTracker
 ): Promise<QuestionAnalysis> {
   const userMessage = `Analyze this question for a Delphi expert panel:\n\n"${question}"`;
 
-  const completion = await safeChatCompletion(openai, {
-    model,
-    messages: [
-      { role: 'system', content: REFINER_SYSTEM_PROMPT },
-      { role: 'user', content: userMessage }
-    ],
+  const result = await invokeModel({
+    tier: 'light',
+    label: 'refiner',
+    system: REFINER_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userMessage }],
+    maxTokens: 600,
     temperature: 0.3,
-    max_tokens: 600
+    costTracker
   });
 
-  if (costTracker && completion.usage) {
-    costTracker.addUsage('refiner', {
-      prompt_tokens: completion.usage.prompt_tokens,
-      completion_tokens: completion.usage.completion_tokens,
-      total_tokens: completion.usage.total_tokens
-    }, model);
-  }
+  const parsed = parseJsonFromText<any>(result.text);
+  if (!parsed) return getDefaultAnalysis(question);
 
-  const content = completion.choices[0]?.message?.content;
-  if (!content) {
-    return getDefaultAnalysis(question);
-  }
-
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const jsonString = jsonMatch ? jsonMatch[0] : content;
-    const parsed = JSON.parse(jsonString);
-    
-    return {
-      original_question: question,
-      decision_type: parsed.decision_type || 'other',
-      time_horizon: parsed.time_horizon || 'unknown',
-      primary_objective: parsed.primary_objective || 'unclear',
-      constraints: Array.isArray(parsed.constraints) ? parsed.constraints : [],
-      unknowns: Array.isArray(parsed.unknowns) ? parsed.unknowns : [],
-      inferred_assumptions: Array.isArray(parsed.inferred_assumptions) ? parsed.inferred_assumptions : [],
-      ambiguity_score: typeof parsed.ambiguity_score === 'number' ? parsed.ambiguity_score : 0.5,
-      refined_question: parsed.refined_question
-    };
-  } catch (error) {
-    console.warn('Failed to parse question analysis, using defaults:', error);
-    return getDefaultAnalysis(question);
-  }
+  return {
+    original_question: question,
+    decision_type: parsed.decision_type || 'other',
+    time_horizon: parsed.time_horizon || 'unknown',
+    primary_objective: parsed.primary_objective || 'unclear',
+    constraints: Array.isArray(parsed.constraints) ? parsed.constraints : [],
+    unknowns: Array.isArray(parsed.unknowns) ? parsed.unknowns : [],
+    inferred_assumptions: Array.isArray(parsed.inferred_assumptions)
+      ? parsed.inferred_assumptions
+      : [],
+    ambiguity_score: typeof parsed.ambiguity_score === 'number' ? parsed.ambiguity_score : 0.5,
+    refined_question: parsed.refined_question
+  };
 }
 
 function getDefaultAnalysis(question: string): QuestionAnalysis {
@@ -88,30 +68,34 @@ function getDefaultAnalysis(question: string): QuestionAnalysis {
 
 export function formatQuestionAnalysisForExperts(analysis: QuestionAnalysis): string {
   const parts: string[] = [];
-  
+
   parts.push(`## Question Analysis (Auto-Generated)`);
   parts.push(`**Decision Type:** ${analysis.decision_type}`);
   parts.push(`**Time Horizon:** ${analysis.time_horizon}`);
   parts.push(`**Primary Objective:** ${analysis.primary_objective}`);
-  
+
   if (analysis.constraints.length > 0) {
     parts.push(`\n**Identified Constraints:**`);
-    analysis.constraints.forEach(c => parts.push(`- ${c}`));
+    analysis.constraints.forEach((c) => parts.push(`- ${c}`));
   }
-  
+
   if (analysis.unknowns.length > 0) {
     parts.push(`\n**Key Unknowns (variables that would change the answer):**`);
-    analysis.unknowns.forEach(u => parts.push(`- ${u}`));
+    analysis.unknowns.forEach((u) => parts.push(`- ${u}`));
   }
-  
+
   if (analysis.inferred_assumptions.length > 0) {
     parts.push(`\n**Inferred Assumptions (may need validation):**`);
-    analysis.inferred_assumptions.forEach(a => parts.push(`- ${a}`));
+    analysis.inferred_assumptions.forEach((a) => parts.push(`- ${a}`));
   }
-  
+
   if (analysis.ambiguity_score > 0.6) {
-    parts.push(`\n⚠️ **Note:** This question has high ambiguity (${(analysis.ambiguity_score * 100).toFixed(0)}%). Consider addressing the unknowns and assumptions in your response.`);
+    parts.push(
+      `\n⚠️ **Note:** This question has high ambiguity (${(analysis.ambiguity_score * 100).toFixed(
+        0
+      )}%). Consider addressing the unknowns and assumptions in your response.`
+    );
   }
-  
+
   return parts.join('\n');
 }
