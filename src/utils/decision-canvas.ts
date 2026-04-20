@@ -1,5 +1,3 @@
-import OpenAI from 'openai';
-import { safeChatCompletion } from './openai-helpers.js';
 import {
   DecisionCanvas,
   OppositionalCase,
@@ -8,17 +6,22 @@ import {
   CounterfactualRiskAnalysis,
   AssumptionExposure
 } from '../types/index.js';
+import { invokeModel, parseJsonFromText } from '../llm/invoke.js';
+import type { CostTracker } from './cost-tracker.js';
+
+const CANVAS_SYSTEM =
+  'You are a strategic decision analyst. Synthesise complex analysis into actionable guidance. Return valid JSON only.';
 
 export async function generateDecisionCanvas(
-  openai: OpenAI,
   consensusPosition: string,
   oppositionalCase: OppositionalCase | undefined,
   regimeSplit: RegimeSplitAnalysis | undefined,
   _regimeSignals: RegimeSignals | undefined,
   counterfactualRisk: CounterfactualRiskAnalysis | undefined,
-  assumptionExposures: AssumptionExposure[] | undefined
+  assumptionExposures: AssumptionExposure[] | undefined,
+  costTracker?: CostTracker
 ): Promise<DecisionCanvas> {
-  const prompt = `You are synthesizing the full output of a Delphi consensus analysis into a Decision Canvas - an actionable summary that helps the reader act on the analysis.
+  const prompt = `You are synthesising the full output of a Delphi consensus analysis into a Decision Canvas - an actionable summary that helps the reader act on the analysis.
 
 CONSENSUS POSITION:
 ${consensusPosition}
@@ -37,7 +40,7 @@ Plausible failure: ${counterfactualRisk.plausible_failure}
 Early warning: ${counterfactualRisk.early_warning_signal}` : ''}
 
 ${assumptionExposures ? `ASSUMPTION EXPOSURES:
-${assumptionExposures.map(ae => `- ${ae.expert_label}: ${ae.failed_assumption}`).join('\n')}` : ''}
+${assumptionExposures.map((ae) => `- ${ae.expert_label}: ${ae.failed_assumption}`).join('\n')}` : ''}
 
 Generate a JSON Decision Canvas:
 {
@@ -50,21 +53,18 @@ Generate a JSON Decision Canvas:
 }`;
 
   try {
-    const completion = await safeChatCompletion(openai, {
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: 'You are a strategic decision analyst. Synthesize complex analysis into actionable guidance. Return valid JSON only.' },
-        { role: 'user', content: prompt }
-      ],
+    const result = await invokeModel({
+      tier: 'heavy',
+      label: 'canvas',
+      system: CANVAS_SYSTEM,
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 800,
       temperature: 0.4,
-      max_tokens: 800
+      costTracker
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) return getFallbackCanvas(consensusPosition);
-
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content);
+    const parsed = parseJsonFromText<any>(result.text);
+    if (!parsed) return getFallbackCanvas(consensusPosition);
 
     return {
       consensus_action: parsed.consensus_action || 'Act on the consensus position with standard risk management.',
@@ -72,7 +72,9 @@ Generate a JSON Decision Canvas:
       reversibility_assessment: parsed.reversibility_assessment || 'Reversibility not assessed.',
       optionality_analysis: parsed.optionality_analysis || 'Optionality not assessed.',
       time_pressure: parsed.time_pressure || 'No immediate time pressure identified.',
-      monitoring_plan: Array.isArray(parsed.monitoring_plan) ? parsed.monitoring_plan : ['Monitor regime signals quarterly']
+      monitoring_plan: Array.isArray(parsed.monitoring_plan)
+        ? parsed.monitoring_plan
+        : ['Monitor regime signals quarterly']
     };
   } catch (error) {
     console.warn('Decision canvas generation failed:', error);

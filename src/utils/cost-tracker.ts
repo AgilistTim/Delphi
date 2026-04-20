@@ -1,74 +1,106 @@
-import { TokenUsage, AgentUsage, CostSummary } from '../types/index.js';
+import { TokenUsage, AgentUsage, CostSummary, AgentType } from '../types/index.js';
 
-const PRICING = {
-  'gpt-4o': { input: 2.50, output: 10.00 },
-  'gpt-4o-mini': { input: 0.15, output: 0.60 },
-  'gpt-4-turbo': { input: 10.00, output: 30.00 },
-  'gpt-4': { input: 30.00, output: 60.00 },
-  'gpt-3.5-turbo': { input: 0.50, output: 1.50 },
-  'sonar-reasoning-pro': { input: 2.00, output: 8.00 },
-  'sonar-reasoning': { input: 1.00, output: 5.00 },
-  'sonar-pro': { input: 3.00, output: 15.00 },
-  'sonar': { input: 1.00, output: 5.00 },
-};
+export interface InvocationRecord {
+  label: AgentType | string;
+  model: string;
+  tier?: 'light' | 'default' | 'heavy' | undefined;
+  round?: number | undefined;
+  agentId?: string | undefined;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  webSearchQueries: number;
+  costUsd: number;
+  costPence: number;
+}
+
+export interface CostCapOptions {
+  perSessionPence?: number | undefined;
+  onExceeded?: ((current: number, cap: number) => void) | undefined;
+}
 
 export class CostTracker {
   private usageRecords: AgentUsage[] = [];
-  private perplexityCalls: number = 0;
-  private openaiCalls: number = 0;
+  private totalCostPence: number = 0;
+  private totalCostUsd: number = 0;
+  private invocationCount: number = 0;
+  private webSearchCount: number = 0;
+  private cap: CostCapOptions | undefined;
 
+  constructor(cap?: CostCapOptions) {
+    this.cap = cap;
+  }
+
+  /**
+   * Primary recorder used by the LLM adapter. The existing `addUsage` method is
+   * preserved for call sites that haven't migrated, but it converts to the same
+   * underlying record shape.
+   */
+  recordInvocation(rec: InvocationRecord): void {
+    const usage: TokenUsage = {
+      prompt_tokens: rec.inputTokens,
+      completion_tokens: rec.outputTokens,
+      total_tokens: rec.inputTokens + rec.outputTokens,
+      cache_read_tokens: rec.cacheReadTokens,
+      cache_write_tokens: rec.cacheWriteTokens,
+      web_search_queries: rec.webSearchQueries,
+      estimated_cost_usd: rec.costUsd,
+      estimated_cost_pence: rec.costPence
+    };
+
+    const record: AgentUsage = {
+      agent_type: rec.label as AgentType,
+      usage,
+      model: rec.model
+    };
+    if (rec.tier) record.tier = rec.tier;
+    if (rec.round !== undefined) record.round = rec.round;
+    if (rec.agentId !== undefined) record.agent_id = rec.agentId;
+
+    this.usageRecords.push(record);
+    this.totalCostPence += rec.costPence;
+    this.totalCostUsd += rec.costUsd;
+    this.invocationCount += 1;
+    this.webSearchCount += rec.webSearchQueries;
+
+    if (this.cap?.perSessionPence !== undefined && this.totalCostPence > this.cap.perSessionPence) {
+      this.cap.onExceeded?.(this.totalCostPence, this.cap.perSessionPence);
+    }
+  }
+
+  // Back-compat shim for older call sites (refiner used to call addUsage
+  // directly with an OpenAI-shaped usage object). New code should use
+  // recordInvocation via invokeModel's costTracker option.
   addUsage(
-    agentType: AgentUsage['agent_type'],
+    agentType: AgentType,
     usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number },
     model?: string,
     agentId?: string,
     round?: number
   ): void {
-    const estimatedCost = this.estimateCost(usage.prompt_tokens, usage.completion_tokens, model);
-    
-    const record: AgentUsage = {
-      agent_type: agentType,
-      usage: {
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: usage.completion_tokens,
-        total_tokens: usage.total_tokens,
-        estimated_cost_usd: estimatedCost
-      }
-    };
-    
-    if (agentId !== undefined) {
-      record.agent_id = agentId;
-    }
-    if (round !== undefined) {
-      record.round = round;
-    }
-    if (model !== undefined) {
-      record.model = model;
-    }
-    
-    this.usageRecords.push(record);
-
-    if (agentType === 'perplexity') {
-      this.perplexityCalls++;
-    } else {
-      this.openaiCalls++;
-    }
+    this.recordInvocation({
+      label: agentType,
+      model: model ?? 'claude-sonnet-4-6',
+      inputTokens: usage.prompt_tokens,
+      outputTokens: usage.completion_tokens,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      webSearchQueries: 0,
+      costUsd: 0,
+      costPence: 0,
+      ...(agentId !== undefined ? { agentId } : {}),
+      ...(round !== undefined ? { round } : {})
+    });
   }
 
-  addPerplexityCall(estimatedTokens?: number, model?: string): void {
-    const tokens = estimatedTokens || 1000;
-    this.addUsage('perplexity', {
-      prompt_tokens: Math.floor(tokens * 0.3),
-      completion_tokens: Math.floor(tokens * 0.7),
-      total_tokens: tokens
-    }, model || 'sonar-reasoning-pro');
+  /** Current cumulative cost in pence (for cap checks). */
+  getCostPence(): number {
+    return this.totalCostPence;
   }
 
-  private estimateCost(promptTokens: number, completionTokens: number, model?: string): number {
-    const pricing = PRICING[model as keyof typeof PRICING] || PRICING['gpt-4o'];
-    const inputCost = (promptTokens / 1_000_000) * pricing.input;
-    const outputCost = (completionTokens / 1_000_000) * pricing.output;
-    return Math.round((inputCost + outputCost) * 10000) / 10000;
+  getCostUsd(): number {
+    return this.totalCostUsd;
   }
 
   getSummary(): CostSummary {
@@ -77,41 +109,60 @@ export class CostTracker {
 
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
+    let totalCacheReadTokens = 0;
+    let totalCacheWriteTokens = 0;
+    let totalWebSearchQueries = 0;
     let totalTokens = 0;
-    let totalCost = 0;
+    let totalCostUsd = 0;
+    let totalCostPence = 0;
 
-    for (const record of this.usageRecords) {
-      totalPromptTokens += record.usage.prompt_tokens;
-      totalCompletionTokens += record.usage.completion_tokens;
-      totalTokens += record.usage.total_tokens;
-      totalCost += record.usage.estimated_cost_usd || 0;
-
-      if (!breakdownByAgentType[record.agent_type]) {
-        breakdownByAgentType[record.agent_type] = {
+    const ensureBucket = (map: Record<string | number, TokenUsage>, key: string | number): TokenUsage => {
+      if (!map[key]) {
+        map[key] = {
           prompt_tokens: 0,
           completion_tokens: 0,
           total_tokens: 0,
-          estimated_cost_usd: 0
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          web_search_queries: 0,
+          estimated_cost_usd: 0,
+          estimated_cost_pence: 0
         };
       }
-      breakdownByAgentType[record.agent_type].prompt_tokens += record.usage.prompt_tokens;
-      breakdownByAgentType[record.agent_type].completion_tokens += record.usage.completion_tokens;
-      breakdownByAgentType[record.agent_type].total_tokens += record.usage.total_tokens;
-      breakdownByAgentType[record.agent_type].estimated_cost_usd! += record.usage.estimated_cost_usd || 0;
+      return map[key];
+    };
+
+    for (const record of this.usageRecords) {
+      const u = record.usage;
+      totalPromptTokens += u.prompt_tokens;
+      totalCompletionTokens += u.completion_tokens;
+      totalCacheReadTokens += u.cache_read_tokens ?? 0;
+      totalCacheWriteTokens += u.cache_write_tokens ?? 0;
+      totalWebSearchQueries += u.web_search_queries ?? 0;
+      totalTokens += u.total_tokens;
+      totalCostUsd += u.estimated_cost_usd ?? 0;
+      totalCostPence += u.estimated_cost_pence ?? 0;
+
+      const typeBucket = ensureBucket(breakdownByAgentType, record.agent_type);
+      typeBucket.prompt_tokens += u.prompt_tokens;
+      typeBucket.completion_tokens += u.completion_tokens;
+      typeBucket.total_tokens += u.total_tokens;
+      typeBucket.cache_read_tokens! += u.cache_read_tokens ?? 0;
+      typeBucket.cache_write_tokens! += u.cache_write_tokens ?? 0;
+      typeBucket.web_search_queries! += u.web_search_queries ?? 0;
+      typeBucket.estimated_cost_usd! += u.estimated_cost_usd ?? 0;
+      typeBucket.estimated_cost_pence! += u.estimated_cost_pence ?? 0;
 
       if (record.round !== undefined) {
-        if (!breakdownByRound[record.round]) {
-          breakdownByRound[record.round] = {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-            estimated_cost_usd: 0
-          };
-        }
-        breakdownByRound[record.round].prompt_tokens += record.usage.prompt_tokens;
-        breakdownByRound[record.round].completion_tokens += record.usage.completion_tokens;
-        breakdownByRound[record.round].total_tokens += record.usage.total_tokens;
-        breakdownByRound[record.round].estimated_cost_usd! += record.usage.estimated_cost_usd || 0;
+        const roundBucket = ensureBucket(breakdownByRound, record.round);
+        roundBucket.prompt_tokens += u.prompt_tokens;
+        roundBucket.completion_tokens += u.completion_tokens;
+        roundBucket.total_tokens += u.total_tokens;
+        roundBucket.cache_read_tokens! += u.cache_read_tokens ?? 0;
+        roundBucket.cache_write_tokens! += u.cache_write_tokens ?? 0;
+        roundBucket.web_search_queries! += u.web_search_queries ?? 0;
+        roundBucket.estimated_cost_usd! += u.estimated_cost_usd ?? 0;
+        roundBucket.estimated_cost_pence! += u.estimated_cost_pence ?? 0;
       }
     }
 
@@ -119,11 +170,15 @@ export class CostTracker {
       total_tokens: totalTokens,
       total_prompt_tokens: totalPromptTokens,
       total_completion_tokens: totalCompletionTokens,
-      estimated_total_cost_usd: Math.round(totalCost * 10000) / 10000,
+      total_cache_read_tokens: totalCacheReadTokens,
+      total_cache_write_tokens: totalCacheWriteTokens,
+      total_web_search_queries: totalWebSearchQueries,
+      estimated_total_cost_usd: round4(totalCostUsd),
+      estimated_total_cost_pence: round2(totalCostPence),
       breakdown_by_agent_type: breakdownByAgentType,
-      breakdown_by_round: breakdownByRound,
-      perplexity_calls: this.perplexityCalls,
-      openai_calls: this.openaiCalls
+      breakdown_by_round: breakdownByRound as Record<number, TokenUsage>,
+      invocation_count: this.invocationCount,
+      web_search_count: this.webSearchCount
     };
   }
 
@@ -133,7 +188,17 @@ export class CostTracker {
 
   reset(): void {
     this.usageRecords = [];
-    this.perplexityCalls = 0;
-    this.openaiCalls = 0;
+    this.totalCostPence = 0;
+    this.totalCostUsd = 0;
+    this.invocationCount = 0;
+    this.webSearchCount = 0;
   }
+}
+
+function round4(n: number): number {
+  return Math.round(n * 10000) / 10000;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }

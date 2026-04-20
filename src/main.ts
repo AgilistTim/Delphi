@@ -2,9 +2,9 @@ import dotenv from 'dotenv';
 import OpenAI from 'openai';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import { safeChatCompletion } from './utils/openai-helpers.js';
+import { invokeModel, parseJsonFromText, getAnthropic } from './llm/invoke.js';
 
-import { PerplexityTool } from './tools/perplexity.js';
+import { WebSearchTool } from './tools/web-search.js';
 import { ExpertAgent } from './agents/expert.js';
 import { ContrarianAgent } from './agents/contrarian.js';
 import { OrchestratorAgent } from './agents/orchestrator.js';
@@ -53,7 +53,7 @@ dotenv.config();
 
 export class DelphiAgent {
   private openai: OpenAI;
-  private perplexity: PerplexityTool;
+  private webSearch: WebSearchTool;
   private orchestrator: OrchestratorAgent;
   private convergenceTracker: ConvergenceTracker;
   private experts: ExpertAgent[] = [];
@@ -62,43 +62,53 @@ export class DelphiAgent {
   private maxRounds: number = 3;
   private guidedMode: boolean = false;
   private guidedModeCallback: ((roundNumber: number, synthesis: RoundSynthesis) => Promise<string | null>) | undefined;
+  private currentCostTracker: CostTracker | undefined;
 
   constructor(config?: Partial<APIConfig>) {
     // Initialize API configuration
     this.config = {
+      anthropic: {
+        apiKey: config?.anthropic?.apiKey || process.env.ANTHROPIC_API_KEY || '',
+        modelLight: config?.anthropic?.modelLight || process.env.DELPHI_MODEL_LIGHT,
+        modelDefault: config?.anthropic?.modelDefault || process.env.DELPHI_MODEL_DEFAULT,
+        modelHeavy: config?.anthropic?.modelHeavy || process.env.DELPHI_MODEL_HEAVY,
+        promptCaching:
+          config?.anthropic?.promptCaching ?? process.env.DELPHI_PROMPT_CACHING !== 'off'
+      },
       openai: {
         apiKey: config?.openai?.apiKey || process.env.OPENAI_API_KEY || '',
-        model: config?.openai?.model || process.env.OPENAI_MODEL || 'gpt-4o',
-        maxTokens: config?.openai?.maxTokens || 2000,
-        temperature: config?.openai?.temperature || 0.7
-      },
-      perplexity: {
-        apiKey: config?.perplexity?.apiKey || process.env.PERPLEXITY_API_KEY || '',
-        model: config?.perplexity?.model || process.env.PERPLEXITY_MODEL || 'sonar-reasoning-pro',
-        searchContextSize: config?.perplexity?.searchContextSize || 'medium'
+        embeddingModel:
+          config?.openai?.embeddingModel ||
+          process.env.OPENAI_EMBEDDING_MODEL ||
+          'text-embedding-3-small'
       }
     };
 
     // Validate API keys
-    if (!this.config.openai.apiKey) {
-      throw new Error('OpenAI API key is required. Set OPENAI_API_KEY environment variable.');
+    if (!this.config.anthropic.apiKey) {
+      throw new Error('ANTHROPIC_API_KEY is required. Set it in your .env.');
     }
-    if (!this.config.perplexity.apiKey) {
-      throw new Error('Perplexity API key is required. Set PERPLEXITY_API_KEY environment variable.');
+    if (!this.config.openai.apiKey) {
+      throw new Error(
+        'OPENAI_API_KEY is required (used for embeddings / convergence similarity). Set it in your .env.'
+      );
     }
 
-    // Initialize clients
+    // Warm the Anthropic singleton so config errors surface early.
+    getAnthropic();
+
+    // OpenAI is retained for embeddings only.
     this.openai = new OpenAI({ apiKey: this.config.openai.apiKey });
-    this.perplexity = new PerplexityTool(this.config.perplexity.apiKey, this.config.perplexity.model);
-    
-    // Initialize orchestrator and tracker
-    this.orchestrator = new OrchestratorAgent(this.openai);
+    this.webSearch = new WebSearchTool();
+
+    // Orchestrator + tracker
+    this.orchestrator = new OrchestratorAgent();
     this.convergenceTracker = new ConvergenceTracker();
 
-    // Initialize embedding similarity with OpenAI instance (#9)
+    // Embedding similarity (convergence tracking) uses OpenAI.
     setOpenAIInstance(this.openai);
 
-    console.log('🧠 DelphiAgent initialized successfully');
+    console.log('🧠 DelphiAgent initialized successfully (Anthropic-tiered)');
   }
 
   /**
@@ -114,20 +124,17 @@ export class DelphiAgent {
     // Structured log for all agent requests/responses
     const agentLogs: any[] = [];
     
-    // Initialize cost tracker
+    // Initialize cost tracker (fresh per run) and wire into orchestrator + instance fields.
     const costTracker = new CostTracker();
+    this.orchestrator = new OrchestratorAgent(costTracker);
+    this.currentCostTracker = costTracker;
 
     try {
       // Phase 0: Question Refiner - analyze the question before anything else
       console.log(`\n🔍 Phase 0: Analyzing question structure...`);
       let questionAnalysis: QuestionAnalysis | undefined;
       try {
-        questionAnalysis = await refineQuestion(
-          this.openai, 
-          prompt.question, 
-          this.config.openai.model,
-          costTracker
-        );
+        questionAnalysis = await refineQuestion(prompt.question, costTracker);
         console.log(`   ✅ Question analysis complete`);
         console.log(`   📋 Decision type: ${questionAnalysis.decision_type}`);
         console.log(`   ⏱️  Time horizon: ${questionAnalysis.time_horizon}`);
@@ -144,7 +151,7 @@ export class DelphiAgent {
       let questionDecomposition: QuestionDecomposition | undefined;
       try {
         console.log(`\n🧩 Phase 0b: Checking question complexity...`);
-        questionDecomposition = await decomposeQuestion(this.openai, prompt.question, this.config.openai.model);
+        questionDecomposition = await decomposeQuestion(prompt.question, costTracker);
         if (questionDecomposition.is_complex) {
           console.log(`   ✅ Complex question detected: ${questionDecomposition.sub_questions.length} sub-questions identified`);
           questionDecomposition.sub_questions.forEach((sq, i) => {
@@ -192,13 +199,17 @@ export class DelphiAgent {
       };
 
       // Generate detailed expert personas using OpenAI
-      const personas: PersonaSpec[] = await generatePersonas(this.openai, prompt.question, expertCount);
+      const personas: PersonaSpec[] = await generatePersonas(
+        prompt.question,
+        expertCount,
+        costTracker
+      );
       // Initialize expert agents with generated personas
-      this.initializeExpertsWithPersonas(personas);
-      
+      this.initializeExpertsWithPersonas(personas, costTracker);
+
       // Initialize contrarian agents (1-2 depending on expert count)
       const contrarianCount = Math.min(2, Math.ceil(expertCount / 3));
-      this.initializeContrarians(contrarianCount);
+      this.initializeContrarians(contrarianCount, costTracker);
 
       const allCrossExaminations: CrossExamination[] = [];
 
@@ -231,10 +242,10 @@ export class DelphiAgent {
           try {
             console.log(`\n⚔️  Phase 2b: Cross-examination (direct expert-to-expert)`);
             crossExaminations = await runCrossExamination(
-              this.openai,
               roundResult.synthesis,
               roundResult.expertResponses,
-              round
+              round,
+              costTracker
             );
             allCrossExaminations.push(...crossExaminations);
             console.log(`   ✅ ${crossExaminations.length} cross-examinations completed`);
@@ -307,9 +318,17 @@ export class DelphiAgent {
       const costSummary = costTracker.getSummary();
       console.log(`\n💰 Cost Summary:`);
       console.log(`   Total tokens: ${costSummary.total_tokens.toLocaleString()}`);
-      console.log(`   Estimated cost: $${costSummary.estimated_total_cost_usd.toFixed(4)}`);
-      console.log(`   OpenAI calls: ${costSummary.openai_calls}`);
-      console.log(`   Perplexity calls: ${costSummary.perplexity_calls}`);
+      console.log(
+        `   Estimated cost: $${costSummary.estimated_total_cost_usd.toFixed(
+          4
+        )} (£${(costSummary.estimated_total_cost_pence / 100).toFixed(2)})`
+      );
+      console.log(
+        `   Invocations: ${costSummary.invocation_count} · web_search queries: ${costSummary.web_search_count}`
+      );
+      console.log(
+        `   Cache: ${costSummary.total_cache_read_tokens.toLocaleString()} read / ${costSummary.total_cache_write_tokens.toLocaleString()} write tokens`
+      );
 
       console.log(`\n🎉 Delphi process completed successfully!`);
       console.log(`📄 Report saved to: ${this.getReportFilename(prompt.question)}`);
@@ -397,48 +416,47 @@ export class DelphiAgent {
     contrarianResponses: ContrarianResponse[];
     failedExperts: { role: string; error: string }[];
   }> {
-    // Phase 0: Perplexity background research (persona-targeted batch)
+    // Phase 0: Anthropic web_search background research (persona-targeted batch)
     // Uses scoped search based on question characteristics (#10)
-    console.log(`\n🔎 Phase 0: Perplexity background research (persona-targeted)`);
-    
+    console.log(`\n🔎 Phase 0: Web search background research (persona-targeted)`);
+
     // Group personas by expertise category
     const expertiseGroups = this.groupPersonasByExpertise(personas);
     const categoryResearch: Map<string, { content: string; citations: any[]; searchResults: any[] }> = new Map();
-    
+
     // Shared baseline research - scoped by question characteristics (#10)
     let sharedBaseline: { content: string; citations: any[]; searchResults: any[] } = { content: '', citations: [], searchResults: [] };
     try {
       console.log(`   [1/${expertiseGroups.size + 1}] Baseline search (scoped by question analysis)...`);
-      sharedBaseline = await scopedSearch(this.perplexity, prompt.question, questionAnalysis);
-      if (costTracker) {
-        costTracker.addPerplexityCall(sharedBaseline.content.length / 4, this.config.perplexity.model);
-      }
+      sharedBaseline = await scopedSearch(this.webSearch, prompt.question, questionAnalysis, {
+        ...(costTracker ? { costTracker } : {})
+      });
       console.log(`   ✅ Baseline research complete`);
     } catch (error) {
       console.warn('   ⚠️  Baseline research failed:', error);
     }
-    
+
     // Sequential persona-targeted searches (with delays to avoid rate limiting)
     let searchIndex = 2;
     for (const [category, _groupPersonas] of expertiseGroups) {
       if (category === 'general') continue; // Skip general category, use baseline
-      
+
       try {
         console.log(`   [${searchIndex}/${expertiseGroups.size + 1}] ${category} search...`);
-        
+
         // Add delay between searches to avoid rate limiting (2 seconds)
         if (searchIndex > 2) {
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
-        
+
         const categoryQuery = this.generateCategorySearchQuery(category, prompt.question);
-        const result = await this.perplexity.search({
-          query: categoryQuery,
-          searchContextSize: 'low'
-        });
-        if (costTracker) {
-          costTracker.addPerplexityCall(result.content.length / 4, this.config.perplexity.model);
-        }
+        const result = await this.webSearch.search(
+          {
+            query: categoryQuery,
+            searchContextSize: 'low'
+          },
+          costTracker ? { costTracker } : {}
+        );
         categoryResearch.set(category, result);
         console.log(`   ✅ ${category} research complete`);
       } catch (error) {
@@ -602,7 +620,7 @@ export class DelphiAgent {
   /**
    * Initialize expert agents with generated personas
    */
-  private initializeExpertsWithPersonas(personas: PersonaSpec[]): void {
+  private initializeExpertsWithPersonas(personas: PersonaSpec[], costTracker?: CostTracker): void {
     console.log(`\n👥 Initializing ${personas.length} expert agents (bespoke personas)`);
     this.experts = [];
     personas.forEach((persona, index) => {
@@ -612,7 +630,7 @@ export class DelphiAgent {
         perspective: persona.perspective,
         bias_instructions: persona.justification + '\n' + persona.description
       };
-      const expert = new ExpertAgent(this.openai, this.perplexity, config);
+      const expert = new ExpertAgent(config, costTracker);
       this.experts.push(expert);
       console.log(`   ✅ Expert ${index + 1}: ${persona.role}`);
     });
@@ -621,12 +639,12 @@ export class DelphiAgent {
   /**
    * Initialize contrarian agents
    */
-  private initializeContrarians(count: number): void {
+  private initializeContrarians(count: number, costTracker?: CostTracker): void {
     console.log(`\n🎯 Initializing ${count} contrarian agents`);
-    
+
     this.contrarians = [];
     for (let i = 0; i < count; i++) {
-      const contrarian = new ContrarianAgent(this.openai, this.perplexity);
+      const contrarian = new ContrarianAgent(costTracker);
       this.contrarians.push(contrarian);
       console.log(`   ✅ Contrarian ${i + 1} initialized`);
     }
@@ -703,13 +721,13 @@ export class DelphiAgent {
     try {
       console.log('\n\u{1F3AF} Generating Decision Canvas...');
       decisionCanvas = await generateDecisionCanvas(
-        this.openai,
         consensusSummary.final_position,
         oppositionalCase,
         regimeSplit,
         regimeSignals,
         counterfactualRisk,
-        assumptionExposures
+        assumptionExposures,
+        costTracker
       );
       console.log('   \u2705 Decision Canvas complete');
     } catch (error) {
@@ -721,8 +739,8 @@ export class DelphiAgent {
     try {
       console.log('\n\u{1F4CA} Generating Structured Uncertainty analysis...');
       structuredUncertainties = await generateStructuredUncertainty(
-        this.openai,
-        finalRound.expertResponses
+        finalRound.expertResponses,
+        costTracker
       );
       console.log(`   \u2705 Structured uncertainty for ${structuredUncertainties.length} experts`);
     } catch (error) {
@@ -734,9 +752,10 @@ export class DelphiAgent {
     try {
       console.log('\n\u{1F50D} Searching for counter-evidence...');
       evidenceContrarian = await searchCounterEvidence(
-        this.perplexity,
+        this.webSearch,
         consensusSummary.final_position,
-        oppositionalCase?.opposite_position || consensusSummary.final_position
+        oppositionalCase?.opposite_position || consensusSummary.final_position,
+        costTracker
       );
       console.log(`   \u2705 Evidence contrarian: ${evidenceContrarian.strength_assessment}`);
     } catch (error) {
@@ -857,35 +876,17 @@ Generate a JSON response with:
   "key_evidence": [{"title": "...", "url": "...", "relevance": "..."}]
 }`;
 
-    const completion = await safeChatCompletion(this.openai, {
-      model: this.config.openai.model,
-      messages: [
-        { role: 'system', content: 'You are generating a consensus summary for a Delphi process. Be clear and objective.' },
-        { role: 'user', content: prompt }
-      ],
+    const result = await invokeModel({
+      tier: 'default',
+      label: 'consensus_summary',
+      system: 'You are generating a consensus summary for a Delphi process. Be clear and objective.',
+      messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
-      max_tokens: 1000
+      maxTokens: 1000,
+      costTracker: this.currentCostTracker
     });
 
-    const content = completion.choices[0]?.message?.content;
-    let text = content;
-
-    // If no content returned (model/param incompatibilities), retry once with a safe baseline model and no temperature
-    if (!text) {
-      try {
-        const retry = await safeChatCompletion(this.openai, {
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: 'You are generating a consensus summary for a Delphi process. Be clear and objective.' },
-            { role: 'user', content: prompt }
-          ],
-          max_tokens: 1000
-        });
-        text = retry.choices[0]?.message?.content || '';
-      } catch {
-        // ignore and fall back to deterministic summary
-      }
-    }
+    let text: string | null | undefined = result.text;
 
     // Deterministic fallback to guarantee pipeline completion
     if (!text) {
@@ -979,33 +980,27 @@ CONSTRAINTS:
 - Focus on structural/systemic failure modes, not surface-level concerns`;
 
     try {
-      const completion = await safeChatCompletion(this.openai, {
-        model: this.config.openai.model,
-        messages: [
-          { role: 'system', content: 'You are a risk analyst who identifies how confident conclusions can fail. Be direct, specific, and avoid hedging.' },
-          { role: 'user', content: prompt }
-        ],
+      const result = await invokeModel({
+        tier: 'default',
+        label: 'counterfactual',
+        system:
+          'You are a risk analyst who identifies how confident conclusions can fail. Be direct, specific, and avoid hedging.',
+        messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
-        max_tokens: 500
+        maxTokens: 500,
+        costTracker: this.currentCostTracker
       });
 
-      const content = completion.choices[0]?.message?.content;
-      if (content) {
-        try {
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          const jsonString = jsonMatch ? jsonMatch[0] : content;
-          const parsed = JSON.parse(jsonString);
-          
-          console.log(`   ✅ Counterfactual risk analysis generated`);
-          return {
-            plausible_failure: parsed.plausible_failure || 'Analysis unavailable',
-            why_missed_early: parsed.why_missed_early || 'Analysis unavailable',
-            early_warning_signal: parsed.early_warning_signal || 'Analysis unavailable'
-          };
-        } catch {
-          console.warn('   ⚠️ Failed to parse counterfactual JSON, using fallback');
-        }
+      const parsed = parseJsonFromText<any>(result.text);
+      if (parsed) {
+        console.log(`   ✅ Counterfactual risk analysis generated`);
+        return {
+          plausible_failure: parsed.plausible_failure || 'Analysis unavailable',
+          why_missed_early: parsed.why_missed_early || 'Analysis unavailable',
+          early_warning_signal: parsed.early_warning_signal || 'Analysis unavailable'
+        };
       }
+      console.warn('   ⚠️ Failed to parse counterfactual JSON, using fallback');
     } catch (error) {
       console.error('Counterfactual analysis generation failed:', error);
     }
@@ -1091,34 +1086,28 @@ FORBIDDEN:
 Be sharp. Be direct. Argue as if lives, money, or careers depend on the opposite position being correct.`;
 
     try {
-      const completion = await safeChatCompletion(this.openai, {
-        model: this.config.openai.model,
-        messages: [
-          { role: 'system', content: 'You are an oppositional advocate. Your job is to argue the opposite of any conclusion as if it were correct. You never balance, reconcile, or hedge. You are trying to persuade a hostile but intelligent decision-maker.' },
-          { role: 'user', content: prompt }
-        ],
+      const result = await invokeModel({
+        tier: 'heavy',
+        label: 'oppositional',
+        system:
+          'You are an oppositional advocate. Your job is to argue the opposite of any conclusion as if it were correct. You never balance, reconcile, or hedge. You are trying to persuade a hostile but intelligent decision-maker.',
+        messages: [{ role: 'user', content: prompt }],
         temperature: 0.8,
-        max_tokens: 600
+        maxTokens: 600,
+        costTracker: this.currentCostTracker
       });
 
-      const content = completion.choices[0]?.message?.content;
-      if (content) {
-        try {
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          const jsonString = jsonMatch ? jsonMatch[0] : content;
-          const parsed = JSON.parse(jsonString);
-          
-          console.log(`   ✅ Oppositional case generated`);
-          return {
-            opposite_position: parsed.opposite_position || 'Position unavailable',
-            argument: parsed.argument || 'Argument unavailable',
-            outperformance_scenario: parsed.outperformance_scenario || 'Scenario unavailable',
-            uncomfortable_implication: parsed.uncomfortable_implication || 'Implication unavailable'
-          };
-        } catch {
-          console.warn('   ⚠️ Failed to parse oppositional case JSON, using fallback');
-        }
+      const parsed = parseJsonFromText<any>(result.text);
+      if (parsed) {
+        console.log(`   ✅ Oppositional case generated`);
+        return {
+          opposite_position: parsed.opposite_position || 'Position unavailable',
+          argument: parsed.argument || 'Argument unavailable',
+          outperformance_scenario: parsed.outperformance_scenario || 'Scenario unavailable',
+          uncomfortable_implication: parsed.uncomfortable_implication || 'Implication unavailable'
+        };
       }
+      console.warn('   ⚠️ Failed to parse oppositional case JSON, using fallback');
     } catch (error) {
       console.error('Oppositional case generation failed:', error);
     }
@@ -1186,37 +1175,26 @@ Generate your response as a JSON array:
 Be direct. State what must be true for the consensus to hold - and therefore what breaks if the oppositional case wins.`;
 
     try {
-      const completion = await safeChatCompletion(this.openai, {
-        model: this.config.openai.model,
-        messages: [
-          { 
-            role: 'system', 
-            content: 'You expose assumptions without defending them. You do not rebut. You do not dismiss. You state what must be true for each position to hold.' 
-          },
-          { role: 'user', content: prompt }
-        ],
+      const result = await invokeModel({
+        tier: 'heavy',
+        label: 'assumption',
+        system:
+          'You expose assumptions without defending them. You do not rebut. You do not dismiss. You state what must be true for each position to hold.',
+        messages: [{ role: 'user', content: prompt }],
         temperature: 0.5,
-        max_tokens: 1000
+        maxTokens: 1000,
+        costTracker: this.currentCostTracker
       });
 
-      const content = completion.choices[0]?.message?.content;
-      if (content) {
-        try {
-          const jsonMatch = content.match(/\[[\s\S]*\]/);
-          const jsonString = jsonMatch ? jsonMatch[0] : content;
-          const parsed = JSON.parse(jsonString);
-          
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            console.log(`   ✅ Generated ${parsed.length} assumption exposures`);
-            return parsed.map((item: { expert_label?: string; failed_assumption?: string }) => ({
-              expert_label: item.expert_label || 'Unknown Expert',
-              failed_assumption: item.failed_assumption || 'Assumption unavailable'
-            }));
-          }
-        } catch {
-          console.warn('   ⚠️ Failed to parse assumption exposures JSON, using fallback');
-        }
+      const parsed = parseJsonFromText<any[]>(result.text);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        console.log(`   ✅ Generated ${parsed.length} assumption exposures`);
+        return parsed.map((item: { expert_label?: string; failed_assumption?: string }) => ({
+          expert_label: item.expert_label || 'Unknown Expert',
+          failed_assumption: item.failed_assumption || 'Assumption unavailable'
+        }));
       }
+      console.warn('   ⚠️ Failed to parse assumption exposures JSON, using fallback');
     } catch (error) {
       console.error('Assumption exposure generation failed:', error);
     }
@@ -1330,41 +1308,38 @@ RULES:
 - Describe each world as if it IS the future`;
 
     try {
-      const completion = await safeChatCompletion(this.openai, {
-        model: this.config.openai.model,
-        messages: [
-          { role: 'system', content: 'You are a strategic scenario planner. Your job is to describe competing futures without judging which is more likely. You never recommend, hedge, or reconcile. You describe each world as if it IS the future.' },
-          { role: 'user', content: prompt }
-        ],
+      const result = await invokeModel({
+        tier: 'heavy',
+        label: 'regime_split',
+        system:
+          'You are a strategic scenario planner. Your job is to describe competing futures without judging which is more likely. You never recommend, hedge, or reconcile. You describe each world as if it IS the future.',
+        messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
-        max_tokens: 500
+        maxTokens: 500,
+        costTracker: this.currentCostTracker
       });
 
-      const content = completion.choices[0]?.message?.content;
-      if (content) {
-        try {
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          const jsonString = jsonMatch ? jsonMatch[0] : content;
-          const parsed = JSON.parse(jsonString);
-          
-          console.log(`   ✅ Regime split analysis generated`);
-          return {
-            consensus_regime: {
-              scarce_resource: parsed.consensus_regime?.scarce_resource || 'Resource unavailable',
-              winning_organization: parsed.consensus_regime?.winning_organization || 'Organization type unavailable',
-              failure_mode: parsed.consensus_regime?.failure_mode || 'Failure mode unavailable'
-            },
-            oppositional_regime: {
-              scarce_resource: parsed.oppositional_regime?.scarce_resource || 'Resource unavailable',
-              winning_organization: parsed.oppositional_regime?.winning_organization || 'Organization type unavailable',
-              failure_mode: parsed.oppositional_regime?.failure_mode || 'Failure mode unavailable'
-            },
-            closing_statement: 'This decision is about which regime you believe you are entering.'
-          };
-        } catch {
-          console.warn('   ⚠️ Failed to parse regime split JSON, using fallback');
-        }
+      const parsed = parseJsonFromText<any>(result.text);
+      if (parsed) {
+        console.log(`   ✅ Regime split analysis generated`);
+        return {
+          consensus_regime: {
+            scarce_resource: parsed.consensus_regime?.scarce_resource || 'Resource unavailable',
+            winning_organization:
+              parsed.consensus_regime?.winning_organization || 'Organization type unavailable',
+            failure_mode: parsed.consensus_regime?.failure_mode || 'Failure mode unavailable'
+          },
+          oppositional_regime: {
+            scarce_resource: parsed.oppositional_regime?.scarce_resource || 'Resource unavailable',
+            winning_organization:
+              parsed.oppositional_regime?.winning_organization ||
+              'Organization type unavailable',
+            failure_mode: parsed.oppositional_regime?.failure_mode || 'Failure mode unavailable'
+          },
+          closing_statement: 'This decision is about which regime you believe you are entering.'
+        };
       }
+      console.warn('   ⚠️ Failed to parse regime split JSON, using fallback');
     } catch (error) {
       console.error('Regime split analysis generation failed:', error);
     }
@@ -1444,33 +1419,28 @@ RULES:
 - Focus on: market behavior, organizational outcomes, competitive dynamics, measurable results`;
 
     try {
-      const completion = await safeChatCompletion(this.openai, {
-        model: this.config.openai.model,
-        messages: [
-          { role: 'system', content: 'You are a strategic intelligence analyst. Your job is to identify concrete, observable signals that would indicate which future is emerging. You never predict, recommend, or hedge. You identify what to watch.' },
-          { role: 'user', content: prompt }
-        ],
+      const result = await invokeModel({
+        tier: 'default',
+        label: 'regime_signals',
+        system:
+          'You are a strategic intelligence analyst. Your job is to identify concrete, observable signals that would indicate which future is emerging. You never predict, recommend, or hedge. You identify what to watch.',
+        messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
-        max_tokens: 400
+        maxTokens: 400,
+        costTracker: this.currentCostTracker
       });
 
-      const content = completion.choices[0]?.message?.content;
-      if (content) {
-        try {
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          const jsonString = jsonMatch ? jsonMatch[0] : content;
-          const parsed = JSON.parse(jsonString);
-          
-          console.log(`   ✅ 12-month reality check generated`);
-          return {
-            consensus_signals: parsed.consensus_signals?.slice(0, 3) || ['Signal unavailable'],
-            oppositional_signals: parsed.oppositional_signals?.slice(0, 3) || ['Signal unavailable'],
-            intro_statement: 'If you had to know which regime is emerging within the next year, these are the signals that would matter most.'
-          };
-        } catch {
-          console.warn('   ⚠️ Failed to parse regime signals JSON, using fallback');
-        }
+      const parsed = parseJsonFromText<any>(result.text);
+      if (parsed) {
+        console.log(`   ✅ 12-month reality check generated`);
+        return {
+          consensus_signals: parsed.consensus_signals?.slice(0, 3) || ['Signal unavailable'],
+          oppositional_signals: parsed.oppositional_signals?.slice(0, 3) || ['Signal unavailable'],
+          intro_statement:
+            'If you had to know which regime is emerging within the next year, these are the signals that would matter most.'
+        };
       }
+      console.warn('   ⚠️ Failed to parse regime signals JSON, using fallback');
     } catch (error) {
       console.error('Regime signals generation failed:', error);
     }
@@ -1915,31 +1885,49 @@ RULES:
   }
 
   /**
-   * Health check for all services
+   * Health check for all services.
+   * Returns:
+   *   - anthropic: can we reach claude with a trivial prompt?
+   *   - webSearch: can we run a web_search turn?
+   *   - openai: is the embeddings key valid? (optional — convergence falls back to word overlap)
    */
-  async healthCheck(): Promise<{ openai: boolean; perplexity: boolean }> {
+  async healthCheck(): Promise<{ anthropic: boolean; webSearch: boolean; openai: boolean }> {
     console.log('🔍 Running health checks...');
-    
+
     const results = {
-      openai: false,
-      perplexity: false
+      anthropic: false,
+      webSearch: false,
+      openai: false
     };
 
     try {
-      const openaiTest = await safeChatCompletion(this.openai, {
-        model: this.config.openai.model,
-        messages: [{ role: 'user', content: 'Test' }],
-        max_tokens: 5
+      const ping = await invokeModel({
+        tier: 'light',
+        label: 'health',
+        system: 'Reply with OK.',
+        messages: [{ role: 'user', content: 'ping' }],
+        maxTokens: 5,
+        temperature: 0
       });
-      results.openai = Array.isArray(openaiTest.choices) && openaiTest.choices.length > 0;
+      results.anthropic = ping.text.length > 0;
     } catch (error) {
-      console.error('OpenAI health check failed:', error);
+      console.error('Anthropic health check failed:', error);
     }
 
     try {
-      results.perplexity = await this.perplexity.healthCheck();
+      results.webSearch = await this.webSearch.healthCheck();
     } catch (error) {
-      console.error('Perplexity health check failed:', error);
+      console.error('Web search health check failed:', error);
+    }
+
+    try {
+      const embedding = await this.openai.embeddings.create({
+        model: this.config.openai.embeddingModel || 'text-embedding-3-small',
+        input: 'health check'
+      });
+      results.openai = Array.isArray(embedding.data) && embedding.data.length > 0;
+    } catch (error) {
+      console.error('OpenAI embedding health check failed:', error);
     }
 
     console.log('Health check results:', results);

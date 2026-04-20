@@ -1,0 +1,26 @@
+{
+  "name": "delphi-hosted",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Public lead-gen demo for Delphi at delphi.agilist.co.uk",
+  "scripts": {
+    "dev": "next dev -p 3002",
+    "build": "next build",
+    "start": "next start -p 3002",
+    "lint": "echo \"No lint configured yet\""
+  },
+  "dependencies": {
+    "next": "^14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

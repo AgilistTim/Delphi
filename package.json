@@ -9,6 +9,9 @@
     "app:dev": "cd apps/dashboard && npm install && npm run dev",
     "app:build": "cd apps/dashboard && npm install && npm run build",
     "app:start": "cd apps/dashboard && npm run start",
+    "hosted:dev": "cd apps/hosted && npm install && npm run dev",
+    "hosted:build": "cd apps/hosted && npm install && npm run build",
+    "hosted:start": "cd apps/hosted && npm run start",
     "build": "tsc",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
@@ -28,6 +31,7 @@
   "author": "Tim",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.1",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",

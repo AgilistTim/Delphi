@@ -1,6 +1,5 @@
-import { QuestionAnalysis } from '../types/index.js';
-import { PerplexityTool } from '../tools/perplexity.js';
-import { Citation } from '../types/index.js';
+import { QuestionAnalysis, Citation } from '../types/index.js';
+import { WebSearchTool, WebSearchOptions } from '../tools/web-search.js';
 
 const POLICY_DOMAINS = [
   'gov.uk', 'europa.eu', 'who.int', 'un.org', 'oecd.org',
@@ -39,12 +38,13 @@ function getDomains(decisionType: string): string[] | undefined {
 }
 
 export async function scopedSearch(
-  perplexity: PerplexityTool,
+  search: WebSearchTool,
   query: string,
-  questionAnalysis?: QuestionAnalysis
+  questionAnalysis?: QuestionAnalysis,
+  opts: WebSearchOptions = {}
 ): Promise<{ content: string; citations: Citation[]; searchResults: any[] }> {
   if (!questionAnalysis) {
-    return perplexity.search({ query, searchContextSize: 'medium' });
+    return search.search({ query, searchContextSize: 'medium' }, opts);
   }
 
   const domains = getDomains(questionAnalysis.decision_type);
@@ -52,18 +52,18 @@ export async function scopedSearch(
 
   if (questionAnalysis.time_horizon === 'immediate' || questionAnalysis.time_horizon === 'short_term') {
     console.log(`   📅 Scoping search to last ${recencyDays} days (time_horizon: ${questionAnalysis.time_horizon})`);
-    return perplexity.searchRecent(query, recencyDays);
+    return search.searchRecent(query, recencyDays, opts);
   }
 
   if (domains) {
     console.log(`   🌐 Scoping search to ${questionAnalysis.decision_type} domains`);
-    return perplexity.searchDomains(query, domains);
+    return search.searchDomains(query, domains, opts);
   }
 
   if (questionAnalysis.decision_type === 'research') {
     console.log(`   🎓 Using academic search mode`);
-    return perplexity.searchAcademic(query);
+    return search.searchAcademic(query, opts);
   }
 
-  return perplexity.search({ query, searchContextSize: 'medium' });
+  return search.search({ query, searchContextSize: 'medium' }, opts);
 }
