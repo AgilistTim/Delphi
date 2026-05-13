@@ -2,73 +2,67 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Logo } from "../../../components/Logo";
-import { Avatar } from "../../../components/Avatar";
 import { Footer } from "../../../components/Footer";
 
-type ExpertMessage = {
-  name: string;
-  role: string;
-  confidence: number;
-  msg: string;
-  active: boolean;
-};
-
-const PANEL: ExpertMessage[] = [
-  {
-    name: "Dr Renu",
-    role: "methodology skeptic",
-    confidence: 7,
-    msg: "Survivorship bias — free-tier conversion numbers read worse than they really are once you filter non-ICP.",
-    active: true
-  },
-  {
-    name: "JP Klein",
-    role: "implementation realist",
-    confidence: 6,
-    msg: "Gate it, don't kill it. The funnel signal is worth more than the support cost you'd save.",
-    active: false
-  },
-  {
-    name: "Maya W",
-    role: "ethics maximalist",
-    confidence: 5,
-    msg: "Existing free users are a trust obligation. Whatever you do, the migration path can't be silent.",
-    active: false
-  },
-  {
-    name: "A Hoyle",
-    role: "operator pragmatist",
-    confidence: 6,
-    msg: "If support cost is the board's story, show margin impact over two quarters — not one.",
-    active: false
-  },
-  {
-    name: "K Tanaka",
-    role: "data skeptic",
-    confidence: 7,
-    msg: "Before any decision — pull the cohort curve. I'd bet conversion is bimodal by vertical.",
-    active: false
-  }
-];
+interface RunState {
+  run_id: string;
+  status: "pending" | "running" | "completed" | "error";
+  question: string;
+  started_at: number;
+  completed_at?: number;
+  error?: string;
+}
 
 export default function DeliberationPage({ params }: { params: { id: string } }) {
-  const [progress, setProgress] = useState(62);
-  const [tokens, setTokens] = useState(32000);
+  const router = useRouter();
+  const [run, setRun] = useState<RunState | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const t = setInterval(() => {
-      setProgress((p) => Math.min(100, p + 0.6));
-      setTokens((k) => Math.min(50000, k + 120));
-      setElapsed((e) => e + 1);
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
+    let cancelled = false;
 
-  const remainingSeconds = Math.max(0, 160 - elapsed);
-  const mm = Math.floor(remainingSeconds / 60);
-  const ss = String(remainingSeconds % 60).padStart(2, "0");
+    async function poll() {
+      try {
+        const res = await fetch(`/api/session/${params.id}`, { cache: "no-store" });
+        if (!res.ok) {
+          if (res.status === 404) setError("Session not found. Start a new one from the dashboard.");
+          return;
+        }
+        const data = (await res.json()) as RunState;
+        if (cancelled) return;
+        setRun(data);
+        if (data.status === "completed") {
+          router.replace(`/app/s/${params.id}/report`);
+        } else if (data.status === "error") {
+          setError(data.error || "Engine error");
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    poll();
+    const iv = setInterval(poll, 3000);
+    const tick = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+      clearInterval(tick);
+    };
+  }, [params.id, router]);
+
+  const statusLabel =
+    run?.status === "running"
+      ? "deliberating"
+      : run?.status === "pending"
+        ? "queued"
+        : run?.status || "loading";
+
+  const mm = Math.floor(elapsed / 60);
+  const ss = String(elapsed % 60).padStart(2, "0");
 
   return (
     <div className="shell">
@@ -76,67 +70,61 @@ export default function DeliberationPage({ params }: { params: { id: string } })
         <div>
           <Logo small />
           <div className="mono" style={{ fontSize: 10, marginTop: 2 }}>
-            session {params.id} · deprecate free tier
+            session {params.id}
           </div>
         </div>
-        <div className="row" style={{ gap: 6 }}>
-          <span className="pill accent">round 2/3</span>
-          <span className="pill">
-            {Math.round(tokens / 1000)}k/50k
-          </span>
+        <span className={`pill ${run?.status === "error" ? "danger" : "accent"}`}>{statusLabel}</span>
+      </div>
+
+      {error ? (
+        <div className="box danger" style={{ padding: 14, marginTop: 20 }}>
+          <strong>Something went wrong.</strong>
+          <div style={{ fontSize: 13, marginTop: 6 }}>{error}</div>
+          <Link href="/app" className="btn sm" style={{ marginTop: 10 }}>
+            ← back to dashboard
+          </Link>
         </div>
-      </div>
+      ) : (
+        <>
+          <h2 style={{ marginTop: 20 }}>The panel is deliberating.</h2>
+          <p style={{ fontSize: 14, color: "var(--ink-soft)", marginTop: 6 }}>
+            Five AI experts are working through {run?.question ? `“${run.question}”` : "your question"} — research,
+            responses, cross-examination, stress tests, synthesis. Usually 3–6 minutes.
+          </p>
 
-      <div className="bar">
-        <div className="fill" style={{ width: `${progress}%` }} />
-      </div>
-      <div className="mono" style={{ fontSize: 10, marginTop: 6 }}>
-        phase · expert responses → synthesis next
-      </div>
-
-      <div className="stack" style={{ marginTop: 18 }}>
-        {PANEL.map((e) => (
-          <div
-            key={e.name}
-            className={`row top ${e.active ? "" : "dim"}`}
-            style={{ gap: 12, alignItems: "flex-start" }}
-          >
-            <Avatar name={e.name} />
-            <div className={`box grow ${e.active ? "speaking" : ""}`}>
-              <div className="row between">
-                <span style={{ fontFamily: "'Caveat', cursive", fontSize: 16, fontWeight: 700 }}>
-                  {e.name}
-                </span>
-                <span className="mono" style={{ fontSize: 10 }}>
-                  conf {e.confidence}/10
-                </span>
-              </div>
-              <div className="mono" style={{ fontSize: 10, color: "var(--ink-faint)" }}>
-                {e.role}
-              </div>
-              <div style={{ fontSize: 14, marginTop: 6, lineHeight: 1.45 }}>
-                {e.active && (
-                  <span className="scribble" style={{ fontSize: 14, marginRight: 4 }}>
-                    ↳
-                  </span>
-                )}
-                {e.msg}
-              </div>
-            </div>
+          <div className="bar" style={{ marginTop: 20 }}>
+            <div
+              className="fill"
+              style={{
+                width: `${Math.min(100, Math.round((elapsed / 360) * 100))}%`,
+                transition: "width 1s linear"
+              }}
+            />
           </div>
-        ))}
-      </div>
+          <div className="mono" style={{ fontSize: 10, marginTop: 6 }}>
+            {mm}:{ss} elapsed · page auto-refreshes every 3s
+          </div>
 
-      <div className="hr dashed" />
+          <div className="box" style={{ marginTop: 24, padding: 14 }}>
+            <div className="mono">what&rsquo;s happening</div>
+            <ul style={{ fontSize: 14, lineHeight: 1.7, paddingLeft: 20, marginTop: 6 }}>
+              <li>Personas + research (~30s)</li>
+              <li>Round 1: expert responses → synthesis → stress tests (~90s)</li>
+              <li>Round 2: refined positions → cross-examination (~90s)</li>
+              <li>Round 3: final synthesis → oppositional case → decision canvas (~90s)</li>
+            </ul>
+          </div>
 
-      <div className="row between wrap" style={{ gap: 10 }}>
-        <Link href="/app" className="btn sm ghost">
-          leave · we&rsquo;ll email you
-        </Link>
-        <span className="mono" style={{ fontSize: 10 }}>
-          ~{mm}:{ss} remaining · {tokens.toLocaleString()} / 50,000 tokens
-        </span>
-      </div>
+          <div className="row between" style={{ marginTop: 24 }}>
+            <Link href="/app" className="btn sm ghost">
+              leave · we&rsquo;ll email you
+            </Link>
+            <span className="mono" style={{ fontSize: 10 }}>
+              you can close this tab · the run continues server-side
+            </span>
+          </div>
+        </>
+      )}
 
       <Footer />
     </div>

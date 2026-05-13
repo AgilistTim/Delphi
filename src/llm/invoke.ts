@@ -124,18 +124,32 @@ export async function invokeModel(opts: InvokeOptions): Promise<InvokeResult> {
     content: m.content
   }));
 
+  const initialMaxTokens = opts.maxTokens ?? 2000;
   const request: Anthropic.Messages.MessageCreateParamsNonStreaming = {
     model,
-    max_tokens: opts.maxTokens ?? 2000,
+    max_tokens: initialMaxTokens,
     system: systemBlocks,
     messages
   };
-  if (opts.temperature !== undefined) request.temperature = opts.temperature;
+  // Opus 4.7 and later deprecate `temperature`; drop it for those models.
+  const supportsTemperature = !/^claude-opus-4-[7-9]/.test(model);
+  if (opts.temperature !== undefined && supportsTemperature) request.temperature = opts.temperature;
   if (opts.stopSequences) request.stop_sequences = opts.stopSequences;
   if (opts.tools) request.tools = opts.tools;
   if (opts.toolChoice) request.tool_choice = opts.toolChoice;
 
-  const response = await client.messages.create(request);
+  let response = await client.messages.create(request);
+
+  // One-shot retry: if the model was cut off, double the cap and try again.
+  // Caps out at 16k tokens to avoid runaway; good enough for any of our sites.
+  if (response.stop_reason === 'max_tokens' && initialMaxTokens < 16000) {
+    const retryTokens = Math.min(16000, initialMaxTokens * 2);
+    console.warn(
+      `[invoke:${opts.label}] hit max_tokens (${initialMaxTokens}); retrying with ${retryTokens}`
+    );
+    request.max_tokens = retryTokens;
+    response = await client.messages.create(request);
+  }
 
   const text = extractText(response);
   const webSearchQueries = countServerToolUses(response, 'web_search');
@@ -211,26 +225,123 @@ function countServerToolUses(message: Message, toolName: string): number {
 }
 
 /**
- * Parse a JSON object or array from model text. Tolerates code fences and
- * leading prose. Returns null if no parseable JSON is found.
+ * Parse a JSON object or array from model text. Tolerates code fences,
+ * leading prose, and obvious trailing commas. Tries several candidates and
+ * returns the first that parses cleanly. Returns null if nothing parses.
  */
-export function parseJsonFromText<T = unknown>(text: string): T | null {
+export type JsonShape = 'object' | 'array' | 'either';
+
+/**
+ * Parse a JSON value from model text. Tolerates code fences, leading prose,
+ * trailing commas, and — when `shape: 'object'` is passed — unwraps a
+ * single-element array that the model occasionally wraps the object in.
+ */
+export function parseJsonFromText<T = unknown>(
+  text: string,
+  shape: JsonShape = 'either'
+): T | null {
   if (!text) return null;
-  // Try fenced first
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const candidate = fenced ? fenced[1] : text;
-  // Prefer the widest { .. } or [ .. ] span
-  const objMatch = candidate.match(/\{[\s\S]*\}/);
-  const arrMatch = candidate.match(/\[[\s\S]*\]/);
-  let span: string | null = null;
-  if (objMatch && arrMatch) {
-    span = objMatch[0].length >= arrMatch[0].length ? objMatch[0] : arrMatch[0];
-  } else {
-    span = objMatch?.[0] ?? arrMatch?.[0] ?? candidate;
+
+  const candidates: string[] = [];
+
+  // 1. Fenced block (```json ... ```)
+  const fencedMatches = text.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/g);
+  for (const m of fencedMatches) candidates.push(m[1]);
+
+  // 2. Balanced span starting at the first `{` or `[` in the text.
+  const balanced = extractBalancedJson(text);
+  if (balanced) candidates.push(balanced);
+
+  // 3. Legacy greedy spans — fallback if the balanced extractor fails.
+  const objMatch = text.match(/\{[\s\S]*\}/);
+  const arrMatch = text.match(/\[[\s\S]*\]/);
+  if (objMatch) candidates.push(objMatch[0]);
+  if (arrMatch) candidates.push(arrMatch[0]);
+
+  // 4. The raw text itself (model might have returned bare JSON).
+  candidates.push(text);
+
+  for (const raw of candidates) {
+    const cleaned = raw.trim();
+    if (!cleaned) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const relaxed = cleaned
+        .replace(/,\s*([\]}])/g, '$1')
+        .replace(/\/\/[^\n]*/g, '');
+      try {
+        parsed = JSON.parse(relaxed);
+      } catch {
+        continue;
+      }
+    }
+
+    // Shape reconciliation:
+    if (shape === 'object') {
+      if (
+        Array.isArray(parsed) &&
+        parsed.length === 1 &&
+        parsed[0] !== null &&
+        typeof parsed[0] === 'object' &&
+        !Array.isArray(parsed[0])
+      ) {
+        return parsed[0] as T;
+      }
+      if (Array.isArray(parsed)) continue; // keep trying other candidates
+      return parsed as T;
+    }
+    if (shape === 'array') {
+      if (Array.isArray(parsed)) return parsed as T;
+      // If an object slipped through but has a single array property, unwrap it.
+      if (parsed !== null && typeof parsed === 'object') {
+        const arrays = Object.values(parsed as Record<string, unknown>).filter(Array.isArray);
+        if (arrays.length === 1) return arrays[0] as T;
+      }
+      continue;
+    }
+    return parsed as T;
   }
-  try {
-    return JSON.parse(span) as T;
-  } catch {
-    return null;
+  return null;
+}
+
+/**
+ * Find the first `{` or `[` in the text and scan forward with a
+ * bracket-depth counter (respecting string literals and escapes) to return
+ * the balanced span. Returns null if no balanced JSON span is found.
+ */
+function extractBalancedJson(text: string): string | null {
+  const start = text.search(/[\[{]/);
+  if (start < 0) return null;
+
+  const open = text[start];
+  const close = open === '{' ? '}' : ']';
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
   }
+  return null;
 }

@@ -44,7 +44,7 @@ export class ContrarianAgent {
         label: 'contrarian',
         system: systemPrompt,
         messages: [{ role: 'user', content: userMessage }],
-        maxTokens: 400,
+        maxTokens: 800,
         temperature: 0.9,
         round: synthesis.round_number,
         agentId: this.agentId,
@@ -54,7 +54,7 @@ export class ContrarianAgent {
       if (!result.text) throw new Error('No response content received from Anthropic');
 
       let parsedResponse: ContrarianResponse;
-      const rawResponse = parseJsonFromText<any>(result.text);
+      const rawResponse = parseJsonFromText<any>(result.text, 'object');
       if (rawResponse) {
         rawResponse.agent_id = this.agentId;
         if (rawResponse.reasoning_stress_tests) {
@@ -91,6 +91,10 @@ export class ContrarianAgent {
       if (words.length > MAX_WORDS_PER_TEST) {
         fixed = words.slice(0, MAX_WORDS_PER_TEST).join(' ');
         if (!fixed.endsWith('.')) fixed += '.';
+      }
+      // Schema also caps at 100 chars — hard-truncate just in case.
+      if (fixed.length > 100) {
+        fixed = fixed.slice(0, 97).trimEnd() + '…';
       }
       return fixed;
     };

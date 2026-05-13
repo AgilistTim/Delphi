@@ -60,13 +60,13 @@ export class OrchestratorAgent {
         label: 'orchestrator',
         system: ORCHESTRATOR_SYSTEM,
         messages: [{ role: 'user', content: userPrompt }],
-        maxTokens: 2000,
+        maxTokens: 4000,
         temperature: 0.3,
         round: roundNumber,
         costTracker: this.costTracker
       });
 
-      const synthesisData = parseJsonFromText<any>(result.text);
+      const synthesisData = parseJsonFromText<any>(result.text, 'object');
       if (!synthesisData) {
         console.error('Failed to parse synthesis JSON:', result.text);
         throw new Error('Failed to parse synthesis response as JSON');

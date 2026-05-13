@@ -35,7 +35,7 @@ export async function refineQuestion(
     costTracker
   });
 
-  const parsed = parseJsonFromText<any>(result.text);
+  const parsed = parseJsonFromText<any>(result.text, 'object');
   if (!parsed) return getDefaultAnalysis(question);
 
   return {

@@ -60,13 +60,13 @@ Extract 2-3 distinct claims, 1-2 conditional factors, and 2-3 key assumptions.`;
     system:
       'You are an uncertainty analyst. Decompose expert confidence into structured uncertainty. Return valid JSON only.',
     messages: [{ role: 'user', content: prompt }],
-    maxTokens: 500,
+    maxTokens: 800,
     temperature: 0.3,
     agentId: expert.agent_id,
     costTracker
   });
 
-  const parsed = parseJsonFromText<any>(result.text);
+  const parsed = parseJsonFromText<any>(result.text, 'object');
   if (!parsed) {
     return {
       overall_confidence: expert.confidence,

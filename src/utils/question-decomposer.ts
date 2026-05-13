@@ -45,7 +45,7 @@ Return JSON:
       costTracker
     });
 
-    const parsed = parseJsonFromText<any>(result.text);
+    const parsed = parseJsonFromText<any>(result.text, 'object');
     if (!parsed) return { is_complex: false, sub_questions: [], interaction_notes: '' };
 
     return {

@@ -284,14 +284,14 @@ async function main(): Promise<void> {
   }
 
   // Validate API keys
-  if (!process.env.OPENAI_API_KEY) {
-    console.error('❌ Error: OPENAI_API_KEY environment variable is required.');
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error('❌ Error: ANTHROPIC_API_KEY environment variable is required.');
     console.error('   Set it in your .env file or export it in your shell.');
     process.exit(1);
   }
 
-  if (!process.env.PERPLEXITY_API_KEY) {
-    console.error('❌ Error: PERPLEXITY_API_KEY environment variable is required.');
+  if (!process.env.OPENAI_API_KEY) {
+    console.error('❌ Error: OPENAI_API_KEY environment variable is required (embeddings).');
     console.error('   Set it in your .env file or export it in your shell.');
     process.exit(1);
   }

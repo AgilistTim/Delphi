@@ -48,8 +48,9 @@ import {
   ExpertPersona
 } from './types/index.js';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables. `override: true` makes .env win over anything the
+// shell pre-set to blank — common when a dotfile exports ANTHROPIC_API_KEY="".
+dotenv.config({ override: true });
 
 export class DelphiAgent {
   private openai: OpenAI;
@@ -898,19 +899,15 @@ Generate a JSON response with:
       };
     }
 
-    try {
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      const jsonString = jsonMatch ? jsonMatch[0] : text;
-      return JSON.parse(jsonString);
-    } catch (error) {
-      // Fallback summary
-      return {
-        final_position: "Multiple expert perspectives were synthesized",
-        support_level: `${allResponses.length} of ${totalExperts} experts supported (the rest failed validation or did not respond)`,
-        confidence_level: finalSynthesis.average_confidence,
-        key_evidence: []
-      };
-    }
+    const parsed = parseJsonFromText<any>(text, 'object');
+    if (parsed) return parsed;
+    // Fallback summary
+    return {
+      final_position: 'Multiple expert perspectives were synthesized',
+      support_level: `${allResponses.length} of ${totalExperts} experts supported (the rest failed validation or did not respond)`,
+      confidence_level: finalSynthesis.average_confidence,
+      key_evidence: []
+    };
   }
 
   /**
@@ -987,11 +984,11 @@ CONSTRAINTS:
           'You are a risk analyst who identifies how confident conclusions can fail. Be direct, specific, and avoid hedging.',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
-        maxTokens: 500,
+        maxTokens: 1000,
         costTracker: this.currentCostTracker
       });
 
-      const parsed = parseJsonFromText<any>(result.text);
+      const parsed = parseJsonFromText<any>(result.text, 'object');
       if (parsed) {
         console.log(`   ✅ Counterfactual risk analysis generated`);
         return {
@@ -1093,11 +1090,11 @@ Be sharp. Be direct. Argue as if lives, money, or careers depend on the opposite
           'You are an oppositional advocate. Your job is to argue the opposite of any conclusion as if it were correct. You never balance, reconcile, or hedge. You are trying to persuade a hostile but intelligent decision-maker.',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.8,
-        maxTokens: 600,
+        maxTokens: 1500,
         costTracker: this.currentCostTracker
       });
 
-      const parsed = parseJsonFromText<any>(result.text);
+      const parsed = parseJsonFromText<any>(result.text, 'object');
       if (parsed) {
         console.log(`   ✅ Oppositional case generated`);
         return {
@@ -1182,11 +1179,11 @@ Be direct. State what must be true for the consensus to hold - and therefore wha
           'You expose assumptions without defending them. You do not rebut. You do not dismiss. You state what must be true for each position to hold.',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.5,
-        maxTokens: 1000,
+        maxTokens: 2500,
         costTracker: this.currentCostTracker
       });
 
-      const parsed = parseJsonFromText<any[]>(result.text);
+      const parsed = parseJsonFromText<any[]>(result.text, 'array');
       if (Array.isArray(parsed) && parsed.length > 0) {
         console.log(`   ✅ Generated ${parsed.length} assumption exposures`);
         return parsed.map((item: { expert_label?: string; failed_assumption?: string }) => ({
@@ -1315,11 +1312,11 @@ RULES:
           'You are a strategic scenario planner. Your job is to describe competing futures without judging which is more likely. You never recommend, hedge, or reconcile. You describe each world as if it IS the future.',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
-        maxTokens: 500,
+        maxTokens: 1200,
         costTracker: this.currentCostTracker
       });
 
-      const parsed = parseJsonFromText<any>(result.text);
+      const parsed = parseJsonFromText<any>(result.text, 'object');
       if (parsed) {
         console.log(`   ✅ Regime split analysis generated`);
         return {
@@ -1426,11 +1423,11 @@ RULES:
           'You are a strategic intelligence analyst. Your job is to identify concrete, observable signals that would indicate which future is emerging. You never predict, recommend, or hedge. You identify what to watch.',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
-        maxTokens: 400,
+        maxTokens: 800,
         costTracker: this.currentCostTracker
       });
 
-      const parsed = parseJsonFromText<any>(result.text);
+      const parsed = parseJsonFromText<any>(result.text, 'object');
       if (parsed) {
         console.log(`   ✅ 12-month reality check generated`);
         return {

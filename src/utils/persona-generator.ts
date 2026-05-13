@@ -95,13 +95,16 @@ Return as a JSON array with all the keys listed above.`;
     label: 'persona',
     system: PERSONA_SYSTEM,
     messages: [{ role: 'user', content: prompt }],
-    maxTokens: 4000,
+    maxTokens: 8000,
     temperature: 0.7,
     costTracker
   });
 
-  const personas = parseJsonFromText<PersonaSpec[]>(result.text);
+  const personas = parseJsonFromText<PersonaSpec[]>(result.text, 'array');
   if (!personas || !Array.isArray(personas) || personas.length === 0) {
+    console.error('[persona] stop_reason:', result.stopReason);
+    console.error('[persona] raw output (first 1200 chars):\n', result.text.slice(0, 1200));
+    console.error('[persona] raw output (last 600 chars):\n', result.text.slice(-600));
     throw new Error('No personas generated / failed to parse persona JSON');
   }
   return personas;

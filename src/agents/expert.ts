@@ -81,7 +81,7 @@ export class ExpertAgent {
         label: 'expert',
         system: systemPrompt,
         messages: [{ role: 'user', content: expertPrompt }],
-        maxTokens: 2000,
+        maxTokens: 6000,
         temperature: 0.7,
         round: roundNumber,
         agentId: this.agentId,
@@ -92,9 +92,11 @@ export class ExpertAgent {
         throw new Error('No response content received from Anthropic');
       }
 
-      const parsedResponse = parseJsonFromText<any>(main.text);
-      if (!parsedResponse) {
-        console.error('Failed to parse JSON response:', main.text);
+      const parsedResponse = parseJsonFromText<any>(main.text, 'object');
+      if (!parsedResponse || Array.isArray(parsedResponse)) {
+        console.error(`[expert:${this.config.role}] stop_reason: ${main.stopReason}`);
+        console.error(`[expert:${this.config.role}] raw (first 1000):\n${main.text.slice(0, 1000)}`);
+        console.error(`[expert:${this.config.role}] raw (last 500):\n${main.text.slice(-500)}`);
         throw new Error('Failed to parse expert response as JSON');
       }
 

@@ -58,12 +58,12 @@ Generate a JSON Decision Canvas:
       label: 'canvas',
       system: CANVAS_SYSTEM,
       messages: [{ role: 'user', content: prompt }],
-      maxTokens: 800,
+      maxTokens: 2000,
       temperature: 0.4,
       costTracker
     });
 
-    const parsed = parseJsonFromText<any>(result.text);
+    const parsed = parseJsonFromText<any>(result.text, 'object');
     if (!parsed) return getFallbackCanvas(consensusPosition);
 
     return {

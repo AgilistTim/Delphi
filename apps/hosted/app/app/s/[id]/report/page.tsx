@@ -3,30 +3,75 @@ import { Logo } from "../../../../components/Logo";
 import { Avatar } from "../../../../components/Avatar";
 import { DisclosureBanner } from "../../../../components/DisclosureBanner";
 import { Footer } from "../../../../components/Footer";
-import { PANEL } from "../../../../lib/fixtures";
 import { config } from "../../../../lib/config";
+import { getRun } from "../../../../lib/engine-proxy";
 
-export default function ReportPage({ params }: { params: { id: string } }) {
+export const dynamic = "force-dynamic";
+
+export default async function ReportPage({ params }: { params: { id: string } }) {
+  const run = await getRun(params.id);
+
+  if (!run) {
+    return (
+      <div className="shell">
+        <div className="topbar">
+          <Logo small />
+          <span className="pill danger">not found</span>
+        </div>
+        <div className="box danger" style={{ padding: 16, marginTop: 20 }}>
+          <strong>Session not found.</strong>
+          <div style={{ fontSize: 13, marginTop: 6 }}>
+            Start a new decision from the dashboard.
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (run.status !== "completed" || !run.report) {
+    return (
+      <div className="shell">
+        <div className="topbar">
+          <Logo small />
+          <span className="pill accent">still running</span>
+        </div>
+        <div className="box accent" style={{ padding: 16, marginTop: 20 }}>
+          <strong>This session is still running.</strong>
+          <div style={{ fontSize: 13, marginTop: 6 }}>
+            Head back to the live view — it&rsquo;ll redirect you here when complete.
+          </div>
+          <Link href={`/app/s/${params.id}`} className="btn sm" style={{ marginTop: 10 }}>
+            ← live view
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const report = run.report as any;
+  const canvas = report.decision_canvas;
+  const consensus = report.consensus_summary;
+  const finalSynthesis = report.round_history?.[report.round_history.length - 1];
+  const experts = report.expert_personas || [];
+  const stressTests = report.contrarian_responses?.[0]?.reasoning_stress_tests;
+
+  const confidence = typeof consensus?.confidence_level === "number"
+    ? consensus.confidence_level.toFixed(1)
+    : null;
+
   return (
     <div className="shell">
       <div className="topbar">
         <div>
           <Logo small />
-          <div
-            style={{ fontFamily: "'Caveat', cursive", fontSize: 18, fontWeight: 700, marginTop: 2 }}
-          >
-            Deprecate free tier? · complete
+          <div style={{ fontFamily: "'Caveat', cursive", fontSize: 18, fontWeight: 700, marginTop: 2 }}>
+            {run.question}
           </div>
         </div>
         <div className="row" style={{ gap: 6 }}>
           <span className="pill ok">complete</span>
-          <a
-            className="btn sm"
-            href={`/api/pdf/${params.id}`}
-            download={`delphi-${params.id}.pdf`}
-          >
-            ↓ pdf
-          </a>
           <a className="btn sm primary" href={config.calendlyUrl}>
             book tim
           </a>
@@ -35,45 +80,61 @@ export default function ReportPage({ params }: { params: { id: string } }) {
 
       <DisclosureBanner compact />
 
-      {/* Decision Canvas — the hero */}
+      {/* Decision Canvas hero */}
       <section style={{ marginTop: 20 }}>
         <h2>Decision Canvas</h2>
-        <div className="mono" style={{ marginTop: 4 }}>
-          consensus · conditional · 7.2/10
-        </div>
-        <div className="grid-2" style={{ marginTop: 12 }}>
-          <div className="box">
-            <div className="mono">recommended</div>
-            <p style={{ fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>
-              Gate free tier behind email verification + usage cap. Ship in six weeks, behind a
-              90-day health gate.
-            </p>
+        {confidence && (
+          <div className="mono" style={{ marginTop: 4 }}>
+            consensus · confidence {confidence}/10
           </div>
-          <div className="box">
-            <div className="mono">reversibility</div>
-            <p style={{ fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>
-              High — ungate in a day if conversion stalls. No data migration required.
-            </p>
+        )}
+        {consensus?.final_position && (
+          <div className="box accent" style={{ padding: 14, marginTop: 10 }}>
+            <div className="mono">the consensus</div>
+            <p style={{ fontSize: 15, marginTop: 6, lineHeight: 1.55 }}>{consensus.final_position}</p>
+            {consensus.support_level && (
+              <div className="mono" style={{ fontSize: 10, marginTop: 6 }}>
+                {consensus.support_level}
+              </div>
+            )}
           </div>
-          <div className="box">
-            <div className="mono">watch for (90 days)</div>
-            <ul style={{ fontSize: 14, marginTop: 4, paddingLeft: 18, lineHeight: 1.6 }}>
-              <li>Trial → paid under 2.5%</li>
-              <li>Support ticket volume ↑ 15%</li>
-              <li>NPS dip in cohort A</li>
-            </ul>
+        )}
+
+        {canvas && (
+          <div className="grid-2" style={{ marginTop: 12 }}>
+            <div className="box">
+              <div className="mono">recommended action (consensus regime)</div>
+              <p style={{ fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>{canvas.consensus_action}</p>
+            </div>
+            <div className="box">
+              <div className="mono">hedge action (oppositional regime)</div>
+              <p style={{ fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>{canvas.oppositional_action}</p>
+            </div>
+            <div className="box">
+              <div className="mono">reversibility</div>
+              <p style={{ fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>{canvas.reversibility_assessment}</p>
+            </div>
+            <div className="box">
+              <div className="mono">optionality</div>
+              <p style={{ fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>{canvas.optionality_analysis}</p>
+            </div>
+            <div className="box">
+              <div className="mono">time pressure</div>
+              <p style={{ fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>{canvas.time_pressure}</p>
+            </div>
+            <div className="box">
+              <div className="mono">monitoring plan</div>
+              <ul style={{ fontSize: 14, marginTop: 4, paddingLeft: 18, lineHeight: 1.6 }}>
+                {(canvas.monitoring_plan || []).map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
           </div>
-          <div className="box">
-            <div className="mono">the other regime</div>
-            <p style={{ fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>
-              If category consolidates within 12 months — kill free entirely, consolidate pricing
-              around workflow tiers.
-            </p>
-          </div>
-        </div>
+        )}
       </section>
 
-      {/* Tim CTA — action-first per V2 */}
+      {/* Book Tim CTA */}
       <section style={{ marginTop: 24 }}>
         <div className="box accent row between" style={{ padding: 14, gap: 14 }}>
           <div>
@@ -90,102 +151,114 @@ export default function ReportPage({ params }: { params: { id: string } }) {
         </div>
       </section>
 
-      {/* Panel + dissent */}
-      <section style={{ marginTop: 28 }}>
-        <h3>The panel</h3>
-        <div className="row wrap" style={{ gap: 10, marginTop: 8 }}>
-          {PANEL.map((e) => (
-            <div
-              key={e.name}
-              className="row"
-              style={{
-                gap: 6,
-                background: "var(--paper-3)",
-                border: "1px solid var(--ink)",
-                padding: "4px 10px 4px 4px",
-                borderRadius: 16
-              }}
-            >
-              <Avatar name={e.name} size="sm" />
-              <span style={{ fontSize: 12 }}>{e.name}</span>
-              <span className="mono" style={{ fontSize: 9 }}>
-                {e.confidence}/10
-              </span>
-            </div>
-          ))}
-        </div>
+      {/* Panel */}
+      {experts.length > 0 && (
+        <section style={{ marginTop: 28 }}>
+          <h3>The panel</h3>
+          <div className="stack tight" style={{ marginTop: 10 }}>
+            {experts.map((p: any, i: number) => (
+              <div key={i} className="row top" style={{ gap: 10 }}>
+                <Avatar name={p.name || p.role || `E${i + 1}`} />
+                <div className="box grow">
+                  <div className="row between">
+                    <strong style={{ fontSize: 14 }}>{p.name || p.role}</strong>
+                    {p.epistemic_stance && (
+                      <span className="mono" style={{ fontSize: 9 }}>
+                        {String(p.epistemic_stance).replace(/_/g, " ")}
+                      </span>
+                    )}
+                  </div>
+                  {p.role && p.name && (
+                    <div className="mono" style={{ fontSize: 9, color: "var(--ink-faint)", marginTop: 2 }}>
+                      {p.role}
+                    </div>
+                  )}
+                  {p.description && (
+                    <p style={{ fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>
+                      {p.description.length > 300 ? p.description.slice(0, 300) + "…" : p.description}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-        <h3 style={{ marginTop: 24 }}>Where they disagreed</h3>
-        <div className="grid-2" style={{ marginTop: 8 }}>
-          <div className="box ok">
-            <div className="mono" style={{ color: "var(--ok)" }}>
-              3 for gate
-            </div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>JP · AH · KT — preserve the signal.</div>
+      {/* Consensus / divergence from final round */}
+      {finalSynthesis && (
+        <section style={{ marginTop: 28 }}>
+          <div className="grid-2">
+            {Array.isArray(finalSynthesis.consensus_areas) && finalSynthesis.consensus_areas.length > 0 && (
+              <div className="box ok">
+                <div className="mono" style={{ color: "var(--ok)" }}>areas of consensus</div>
+                <ul style={{ fontSize: 13, marginTop: 6, paddingLeft: 18, lineHeight: 1.55 }}>
+                  {finalSynthesis.consensus_areas.map((a: string, i: number) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {Array.isArray(finalSynthesis.divergence_areas) && finalSynthesis.divergence_areas.length > 0 && (
+              <div className="box danger">
+                <div className="mono" style={{ color: "var(--danger)" }}>areas of divergence</div>
+                <ul style={{ fontSize: 13, marginTop: 6, paddingLeft: 18, lineHeight: 1.55 }}>
+                  {finalSynthesis.divergence_areas.map((a: string, i: number) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-          <div className="box danger">
-            <div className="mono" style={{ color: "var(--danger)" }}>
-              2 for kill
-            </div>
-            <div style={{ fontSize: 13, marginTop: 4 }}>
-              DR · MW — support cost scaling assumption.
-            </div>
-          </div>
-        </div>
-        <div className="box dashed" style={{ marginTop: 10, borderColor: "var(--accent)" }}>
-          <div className="mono">cross-exam · unresolved</div>
-          <p style={{ fontSize: 13, marginTop: 4 }}>
-            Whether free-user support cost scales linearly with cohort size, or plateaus after
-            onboarding.
-          </p>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Stress tests */}
-      <section style={{ marginTop: 28 }}>
-        <h3>Stress tests</h3>
-        <div className="stack tight" style={{ marginTop: 8 }}>
-          <div className="box dashed">
-            <strong>Lossy:</strong> the synthesis averages team size away. A 10-person shop hits
-            support costs sooner than this suggests.
+      {stressTests && (
+        <section style={{ marginTop: 28 }}>
+          <h3>Stress tests</h3>
+          <div className="stack tight" style={{ marginTop: 8 }}>
+            <div className="box dashed">
+              <strong>Lossy:</strong> {stressTests.lossy_simplification}
+            </div>
+            <div className="box dashed">
+              <strong>Context flip:</strong> {stressTests.context_flip}
+            </div>
+            <div className="box dashed">
+              <strong>Incentives:</strong> {stressTests.incentive_misalignment}
+            </div>
+            <div className="box dashed">
+              <strong>Second-order:</strong> {stressTests.second_order_failure}
+            </div>
           </div>
-          <div className="box dashed">
-            <strong>Flip:</strong> if trial-to-paid under 2.5% after gate is imposed, the consensus
-            reverses to kill.
-          </div>
-          <div className="box dashed">
-            <strong>Other regime:</strong> in an API-first category shift, tiers are the product —
-            free-tier decision becomes irrelevant.
-          </div>
-          <div className="box dashed">
-            <strong>Contrarian:</strong> &ldquo;You should keep the free tier wide open and eat the
-            support cost for 12 months to capture category share before consolidation.&rdquo;
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
-      {/* 12-month signals */}
-      <section style={{ marginTop: 28 }}>
-        <h3>12-month signals</h3>
-        <div className="stack tight" style={{ marginTop: 8, fontSize: 14 }}>
-          <div className="meta-row">
-            <span className="k">Trial → paid %</span>
-            <span className="v">baseline 3.1% · alert under 2.5%</span>
+      {/* Key evidence */}
+      {Array.isArray(consensus?.key_evidence) && consensus.key_evidence.length > 0 && (
+        <section style={{ marginTop: 28 }}>
+          <h3>Key evidence</h3>
+          <div className="stack tight" style={{ marginTop: 8 }}>
+            {consensus.key_evidence.slice(0, 8).map((c: any, i: number) => (
+              <a
+                key={i}
+                href={c.url}
+                target="_blank"
+                rel="noreferrer"
+                className="box"
+                style={{ textDecoration: "none", color: "inherit", display: "block" }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{c.title}</div>
+                {c.relevance && (
+                  <div className="mono" style={{ fontSize: 10, marginTop: 4 }}>
+                    {c.relevance}
+                  </div>
+                )}
+              </a>
+            ))}
           </div>
-          <div className="meta-row">
-            <span className="k">Support ticket ratio</span>
-            <span className="v">baseline 1.0× · alert over 1.8×</span>
-          </div>
-          <div className="meta-row">
-            <span className="k">Cohort churn (A)</span>
-            <span className="v">baseline 4% · alert over 6%</span>
-          </div>
-          <div className="meta-row">
-            <span className="k">NPS (paid)</span>
-            <span className="v">baseline 42 · alert under 35</span>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <div className="hr dashed" />
 
@@ -193,9 +266,10 @@ export default function ReportPage({ params }: { params: { id: string } }) {
         <Link href="/app" className="mono" style={{ fontSize: 10 }}>
           ← all decisions
         </Link>
-        <a className="mono" style={{ fontSize: 10 }} href={`/api/pdf/${params.id}`}>
-          ↓ full report (PDF, 18 pages)
-        </a>
+        <span className="mono" style={{ fontSize: 10 }}>
+          run {params.id} · started {new Date(run.started_at).toLocaleString()}
+          {run.completed_at ? ` · done in ${Math.round((run.completed_at - run.started_at) / 1000)}s` : ""}
+        </span>
       </div>
 
       <Footer />

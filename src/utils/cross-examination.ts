@@ -81,7 +81,7 @@ async function generateChallenge(
           content: `Your position: "${examiner.position}"\n\nTheir position (${respondent.expertise_area}): "${respondent.position}"\n\nTheir reasoning: "${respondent.reasoning.substring(0, 500)}"\n\nPose your most pointed challenge to their reasoning.`
         }
       ],
-      maxTokens: 250,
+      maxTokens: 500,
       temperature: 0.7,
       round,
       costTracker
@@ -109,7 +109,7 @@ async function generateCrossResponse(
           content: `Your position: "${respondent.position}"\n\nChallenge from another expert: "${challenge}"\n\nRespond directly to this challenge.`
         }
       ],
-      maxTokens: 250,
+      maxTokens: 500,
       temperature: 0.7,
       round,
       costTracker
