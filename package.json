@@ -13,6 +13,8 @@
     "hosted:build": "cd apps/hosted && npm install && npm run build",
     "hosted:start": "cd apps/hosted && npm run start",
     "build": "tsc",
+    "postbuild": "mkdir -p dist/prompts && cp -R src/prompts/. dist/prompts/",
+    "prestart": "npm run build",
     "start": "node dist/cli.js",
     "dev": "tsx src/cli.ts",
     "test": "vitest",
@@ -55,5 +57,6 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "packageManager": "npm@10.9.4"
 }

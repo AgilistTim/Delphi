@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import DelphiAgent from './main.js';
@@ -216,13 +216,41 @@ async function runDelphiProcess(
   }
 }
 
+// Prompt files agents load at runtime. Paths are relative to __dirname so
+// they resolve under both `tsx src/cli.ts` (dev) and `node dist/cli.js` (built).
+const REQUIRED_RUNTIME_ASSETS = [
+  'prompts/expert_prompt.md',
+  'prompts/contrarian_prompt.md'
+];
+
+function checkRuntimeAssets(): { ok: boolean; missing: string[] } {
+  const missing: string[] = [];
+  for (const rel of REQUIRED_RUNTIME_ASSETS) {
+    const abs = join(__dirname, rel);
+    if (!existsSync(abs)) missing.push(abs);
+  }
+  return { ok: missing.length === 0, missing };
+}
+
 async function runHealthCheck(): Promise<void> {
   console.log('\n🔍 Running DelphiAgent health check...\n');
-  
+
+  // Fail fast on missing runtime assets — no point spending API calls if
+  // prompts are missing. Most often hit when dist/ is built without the
+  // postbuild prompt-copy step.
+  const assets = checkRuntimeAssets();
+  console.log(`- Runtime assets: ${assets.ok ? '✅ All present' : '❌ Missing'}`);
+  if (!assets.ok) {
+    console.error('\n❌ Required prompt files are missing:');
+    for (const p of assets.missing) console.error(`   • ${p}`);
+    console.error('\n   Run `npm run build` to regenerate dist/ (the postbuild step copies prompts).');
+    process.exit(1);
+  }
+
   try {
     const delphi = new DelphiAgent();
     const results = await delphi.healthCheck();
-    
+
     console.log('Health Check Results:');
     console.log(`- Anthropic API: ${results.anthropic ? '✅ Connected' : '❌ Failed'}`);
     console.log(`- Web Search (Anthropic): ${results.webSearch ? '✅ Connected' : '❌ Failed'}`);
@@ -237,7 +265,7 @@ async function runHealthCheck(): Promise<void> {
       );
       process.exit(1);
     }
-    
+
   } catch (error) {
     console.error('\n❌ Health check failed:', error);
     process.exit(1);
