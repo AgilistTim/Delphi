@@ -179,55 +179,67 @@ Webhook support: include `webhook_url` in the POST body to receive a notificatio
 
 ---
 
-## Web Dashboard
+## Web App (`apps/web`)
 
-The Next.js dashboard provides an interactive UI for running analyses, streaming live output, and exploring results.
+The commercial web app is a Next.js application. It signs users in with a Supabase
+magic link, starts deliberations against the engine REST API, and reads results back
+from Supabase — so runs and reports survive restarts and are scoped per user.
 
-### Dashboard Pages
+### Pages
+- **Landing** (`/`) -- Public lead-gen page
+- **Sign in** (`/sign-in`) -- Supabase magic-link auth
+- **Decisions** (`/app`) -- Your runs (live + completed), token budget, and view links
+- **New decision** (`/app/new`) -- Start a deliberation (question, context, experts, rounds)
+- **Live view** (`/app/s/{id}`) -- Polls run status; redirects to the report when complete
+- **Report** (`/app/s/{id}/report`) -- Decision Canvas, panel, stress tests, evidence; `.md` / `.json` download
+- **Portfolio** (`/app/portfolio`) -- Cross-run comparison: consensus types, confidence, cost/tokens
+- **Signal Tracker** (`/app/signal-tracker`) -- Regime-signal status across past analyses
+- **Calibration** (`/app/calibration`) -- Prediction accuracy and retrospective history
 
-- **Dashboard** (`/`) -- Run console to start new analyses with live SSE streaming; browse run history with status, confidence, and timestamps
-- **Report Viewer** (`/runs/{slug}`) -- Full analysis exploration with tabbed navigation (Summary, Experts, Evidence, Rounds, Post-Consensus)
-- **Portfolio** (`/portfolio`) -- Cross-run comparison with consensus types, confidence distributions, common themes, and cost trends across all analyses
-- **Signal Tracker** (`/signal-tracker`) -- Monitor regime signals from past analyses; view signal status (confirmed, emerging, contradicted, not observed) with summary statistics
-- **Calibration** (`/calibration`) -- Track prediction accuracy over time; view accuracy breakdown, accumulated lessons learned, and retrospective history
+### Architecture
+- **`delphi-engine`** -- the Node/Express REST API (`src/api.ts`) runs the multi-round LLM
+  deliberation and persists run state + reports to Supabase (`DELPHI_STORE=supabase`).
+- **`delphi-web`** -- the Next.js app proxies run-starts to the engine
+  (`DELPHI_ENGINE_URL`) and reads runs/trackers/retrospectives directly from Supabase
+  under row-level security.
+- The **CLI** is unchanged for developers — it uses the filesystem store (`output/`) by default.
 
-### Report Viewer Features
-- **Executive Summary** -- One-paragraph answer with confidence level and key caveats at the top of the report
-- **Jump Navigation** -- Table of contents with anchor links to all sections
-- **Collapsible Sections** -- Expand/collapse for Decision Canvas, Structured Uncertainty, Evidence Contrarian, Cross-Examination, Question Decomposition, and Prior Analyses
-- **Metric Tooltips** -- Hover info icons on convergence metrics to see what each metric measures and what good/bad values look like
-- **Convergence Trend Charts** -- Line charts showing how position stability, consensus clarity, and confidence spread evolve across rounds
-- **Expert Confidence Matrix** -- Heatmap showing expert-to-expert alignment and individual confidence shifts between rounds
-- **Evidence Quality Charts** -- Bar chart of source type breakdown (academic, news, blog) with average quality scores
-- **Animated Expert Discussion** -- Experts present positions with avatars, speech bubbles, and confidence meters
-- **Round Evolution Timeline** -- Visualise how clusters, consensus areas, and confidence shift across rounds
-- **Export Options** -- Download PDF, Markdown, or JSON from the report viewer
-
-### Run Locally
+### Run locally
 ```bash
-# From repo root -- both installs are required
-npm install              # Root dependencies (required for CLI spawning)
-cd apps/dashboard
-npm install              # Dashboard dependencies
-npm run dev              # Starts on http://localhost:3001
-```
+# 1. Engine (terminal 1) — needs ANTHROPIC + OPENAI keys (+ Supabase if DELPHI_STORE=supabase)
+npm install && npm run build
+DELPHI_API_PORT=3003 npm run engine        # http://localhost:3003
 
-### Production Build
-```bash
-npm install              # From repo root
-cd apps/dashboard
-npm install
-npm run build
-npm start                # http://localhost:3001
+# 2. Web app (terminal 2)
+cd apps/web && npm install && npm run dev   # http://localhost:3002
 ```
+Set `DELPHI_ENGINE_URL=http://localhost:3003` and the `NEXT_PUBLIC_SUPABASE_*` vars
+(see `.env.example`) in `apps/web/.env.local`. Without Supabase configured, auth gating
+is skipped so the UI is still browsable in dev.
 
-### Notes
-- The dashboard spawns the CLI as a child process from the repo root, so root `npm install` is required
-- API keys must be configured in the root `.env` file (not in `apps/dashboard/.env`)
-- Historical runs are read from the `output/` directory at the repo root
-- Signal tracker data is stored in `output/signal-trackers.json`
-- Retrospective data is stored in `output/retrospectives.json`
-- Clear `.next` cache (`rm -rf apps/dashboard/.next`) if you encounter stale UI after updates
+---
+
+## Deployment (Render + Supabase)
+
+The repo ships a [`render.yaml`](render.yaml) blueprint that provisions both services.
+
+1. **Create a Supabase project** and run the migration in
+   [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)
+   (SQL editor, or `supabase db push`). Note the project URL, the **anon** key, and the
+   **service-role** key. In Supabase Auth, enable Email magic links and add your web app's
+   URL (and `/auth/callback`) to the allowed redirect URLs.
+2. **Create a Render Blueprint** from this repo. It defines:
+   - `delphi-engine` — `node dist/api.js`, health check `/api/v1/health`, single instance.
+   - `delphi-web` — `apps/web` Next.js app; `DELPHI_ENGINE_URL` is wired to the engine automatically.
+3. **Fill the `delphi-secrets` env group** in the Render dashboard:
+   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`. After the web service gets a
+   URL, set `NEXT_PUBLIC_SITE_URL` to it (used for the magic-link redirect).
+4. Deploy. The engine persists every run to Supabase, so completed analyses survive restarts.
+
+> Not yet enforced in this MVP (planned): per-account quota/token caps, the access-request
+> approval flow, admin analytics on real data, billing, and a dedicated job queue for
+> multi-instance engine scaling.
 
 ---
 

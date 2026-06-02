@@ -1,8 +1,7 @@
 import dotenv from 'dotenv';
 import OpenAI from 'openai';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
 import { invokeModel, parseJsonFromText, getAnthropic } from './llm/invoke.js';
+import { getStore } from './storage/index.js';
 
 import { WebSearchTool } from './tools/web-search.js';
 import { ExpertAgent } from './agents/expert.js';
@@ -169,7 +168,7 @@ export class DelphiAgent {
       let priorAnalyses: PriorAnalysisReference[] = [];
       try {
         console.log(`\n📚 Phase 0c: Searching for related prior analyses...`);
-        priorAnalyses = findRelatedAnalyses(prompt.question);
+        priorAnalyses = await findRelatedAnalyses(prompt.question);
         if (priorAnalyses.length > 0) {
           console.log(`   ✅ Found ${priorAnalyses.length} related prior analyses`);
           priorAnalyses.forEach(pa => {
@@ -785,7 +784,7 @@ export class DelphiAgent {
           regimeSignals.consensus_signals,
           regimeSignals.oppositional_signals
         );
-        saveSignalTracker(tracker);
+        await saveSignalTracker(tracker);
         console.log('   \u2705 Signal tracker saved for future monitoring');
       }
     } catch (error) {
@@ -1468,44 +1467,24 @@ RULES:
    * Save the report to file
    */
   private async saveReport(report: DelphiReport): Promise<void> {
-    // Ensure output directory exists
-    if (!existsSync('output')) {
-      mkdirSync('output', { recursive: true });
-    }
-
-    const filename = this.getReportFilename(report.prompt.question);
-    const filepath = join('output', filename);
-
-    // Generate markdown report
+    const slug = this.getReportFilename(report.prompt.question).replace(/\.md$/, '');
     const markdownContent = this.generateMarkdownReport(report);
-    
-    // Save markdown file
-    writeFileSync(filepath, markdownContent, 'utf-8');
-    
-    // Also save JSON for data analysis
-    const jsonFilepath = filepath.replace('.md', '.json');
-    writeFileSync(jsonFilepath, JSON.stringify(report, null, 2), 'utf-8');
-
-    console.log(`📄 Report saved to: ${filepath}`);
-    console.log(`📊 Data saved to: ${jsonFilepath}`);
+    await getStore().saveReport(report, markdownContent, slug);
   }
 
   /**
-   * Save agent logs to file for frontend/debugging
+   * Public markdown renderer — used by the API layer to persist the
+   * human-readable form alongside the structured report.
+   */
+  public renderMarkdown(report: DelphiReport): string {
+    return this.generateMarkdownReport(report);
+  }
+
+  /**
+   * Save agent logs for frontend/debugging (filesystem store only).
    */
   private async saveAgentLogs(agentLogs: any[], question: string): Promise<void> {
-    if (!existsSync('output')) {
-      mkdirSync('output', { recursive: true });
-    }
-    const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
-    const sanitizedQuestion = question
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, '')
-      .replace(/\s+/g, '-')
-      .slice(0, 50);
-    const logFile = `output/agent-logs-${timestamp}-${sanitizedQuestion}.json`;
-    writeFileSync(logFile, JSON.stringify(agentLogs, null, 2), 'utf-8');
-    console.log(`📝 Agent logs saved to: ${logFile}`);
+    await getStore().saveAgentLogs(agentLogs, question);
   }
 
   /**
