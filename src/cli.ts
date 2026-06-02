@@ -263,10 +263,10 @@ async function main(): Promise<void> {
   // Handle API server mode
   if (args.api) {
     const { createDelphiAPI } = await import('./api.js');
-    const port = parseInt(process.env.DELPHI_API_PORT || '3002', 10);
+    const port = parseInt(process.env.PORT || process.env.DELPHI_API_PORT || '3002', 10);
     const app = createDelphiAPI(port);
-    app.listen(port, () => {
-      console.log(`Delphi REST API listening on http://localhost:${port}`);
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`Delphi REST API listening on http://0.0.0.0:${port}`);
     });
     return;
   }

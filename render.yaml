@@ -1,0 +1,62 @@
+# Render blueprint for Delphi.
+# Two services:
+#   - delphi-engine: the Node/Express deliberation API (runs the LLM work)
+#   - delphi-web:    the Next.js commercial web app (UI + auth, proxies to engine)
+# Shared secrets live in the `delphi-secrets` env group (set values in the
+# Render dashboard — they are intentionally not committed here).
+
+services:
+  # ── Deliberation engine (REST API) ───────────────────────────
+  - type: web
+    name: delphi-engine
+    runtime: node
+    plan: standard
+    numInstances: 1 # single instance: runs are processed in-process in the background
+    buildCommand: npm install && npm run build
+    startCommand: node dist/api.js
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: DELPHI_STORE
+        value: supabase
+      - fromGroup: delphi-secrets
+
+  # ── Commercial web app (Next.js) ─────────────────────────────
+  - type: web
+    name: delphi-web
+    runtime: node
+    plan: standard
+    rootDir: apps/web
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    autoDeploy: true
+    envVars:
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        fromGroup: delphi-secrets
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        fromGroup: delphi-secrets
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false # set to the web service's public URL after first deploy
+      - key: DELPHI_ENGINE_URL
+        fromService:
+          type: web
+          name: delphi-engine
+          property: host
+
+envVarGroups:
+  - name: delphi-secrets
+    envVars:
+      # Engine secrets
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Web (public) Supabase keys — safe to expose to the browser
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false

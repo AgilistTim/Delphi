@@ -1,44 +1,22 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { Retrospective, SignalTracker, SignalStatus } from '../types/index.js';
+import { getStore } from '../storage/index.js';
 
-const RETROSPECTIVES_FILE = 'output/retrospectives.json';
-const SIGNAL_TRACKERS_FILE = 'output/signal-trackers.json';
-
-function ensureOutputDir(): void {
-  if (!existsSync('output')) {
-    mkdirSync('output', { recursive: true });
-  }
+export async function loadRetrospectives(): Promise<Retrospective[]> {
+  return getStore().loadRetrospectives();
 }
 
-export function loadRetrospectives(): Retrospective[] {
-  try {
-    if (!existsSync(RETROSPECTIVES_FILE)) return [];
-    return JSON.parse(readFileSync(RETROSPECTIVES_FILE, 'utf-8'));
-  } catch {
-    return [];
-  }
+export async function saveRetrospective(retrospective: Retrospective): Promise<void> {
+  await getStore().saveRetrospective(retrospective);
 }
 
-export function saveRetrospective(retrospective: Retrospective): void {
-  ensureOutputDir();
-  const existing = loadRetrospectives();
-  const index = existing.findIndex(r => r.report_slug === retrospective.report_slug);
-  if (index >= 0) {
-    existing[index] = retrospective;
-  } else {
-    existing.push(retrospective);
-  }
-  writeFileSync(RETROSPECTIVES_FILE, JSON.stringify(existing, null, 2), 'utf-8');
-}
-
-export function getCalibrationSummary(): {
+export async function getCalibrationSummary(): Promise<{
   total: number;
   correct: number;
   partially_correct: number;
   incorrect: number;
   accuracy_rate: number;
-} {
-  const retrospectives = loadRetrospectives().filter(r => r.outcome !== 'too_early');
+}> {
+  const retrospectives = (await loadRetrospectives()).filter(r => r.outcome !== 'too_early');
   const total = retrospectives.length;
   const correct = retrospectives.filter(r => r.outcome === 'correct').length;
   const partially_correct = retrospectives.filter(r => r.outcome === 'partially_correct').length;
@@ -48,25 +26,12 @@ export function getCalibrationSummary(): {
   return { total, correct, partially_correct, incorrect, accuracy_rate };
 }
 
-export function loadSignalTrackers(): SignalTracker[] {
-  try {
-    if (!existsSync(SIGNAL_TRACKERS_FILE)) return [];
-    return JSON.parse(readFileSync(SIGNAL_TRACKERS_FILE, 'utf-8'));
-  } catch {
-    return [];
-  }
+export async function loadSignalTrackers(): Promise<SignalTracker[]> {
+  return getStore().loadSignalTrackers();
 }
 
-export function saveSignalTracker(tracker: SignalTracker): void {
-  ensureOutputDir();
-  const existing = loadSignalTrackers();
-  const index = existing.findIndex(t => t.report_slug === tracker.report_slug);
-  if (index >= 0) {
-    existing[index] = tracker;
-  } else {
-    existing.push(tracker);
-  }
-  writeFileSync(SIGNAL_TRACKERS_FILE, JSON.stringify(existing, null, 2), 'utf-8');
+export async function saveSignalTracker(tracker: SignalTracker): Promise<void> {
+  await getStore().saveSignalTracker(tracker);
 }
 
 export function initializeSignalTracker(
