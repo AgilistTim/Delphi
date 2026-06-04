@@ -51,7 +51,7 @@ export class WebSearchTool {
       label: 'web_search',
       system: RESEARCH_SYSTEM,
       messages: [{ role: 'user', content: userMessage }],
-      maxTokens: 2000,
+      maxTokens: 8000,
       temperature: 0.2,
       tools: [webSearchToolSpec({ maxUses })],
       round: merged.round,

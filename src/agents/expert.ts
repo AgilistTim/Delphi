@@ -63,7 +63,7 @@ export class ExpertAgent {
               '\n\nSummarise the background and key considerations for this question. Do not cite sources.'
           }
         ],
-        maxTokens: 600,
+        maxTokens: 1500,
         temperature: 0.5,
         round: roundNumber,
         agentId: this.agentId,
@@ -81,7 +81,7 @@ export class ExpertAgent {
         label: 'expert',
         system: systemPrompt,
         messages: [{ role: 'user', content: expertPrompt }],
-        maxTokens: 6000,
+        maxTokens: 12000,
         temperature: 0.7,
         round: roundNumber,
         agentId: this.agentId,
