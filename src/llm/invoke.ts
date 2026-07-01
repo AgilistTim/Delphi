@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'async_hooks';
 import Anthropic from '@anthropic-ai/sdk';
 import type {
   Message,
@@ -7,6 +8,16 @@ import type {
 } from '@anthropic-ai/sdk/resources/messages';
 import { CostTracker } from '../utils/cost-tracker.js';
 import { costUsd, usdToPence } from './pricing.js';
+
+const apiKeyStorage = new AsyncLocalStorage<string>();
+
+/**
+ * Runs `fn` inside an async context where `getAnthropic()` will use `apiKey`
+ * instead of the environment variable. Used by the engine to support BYOK.
+ */
+export function runWithApiKey<T>(apiKey: string, fn: () => Promise<T>): Promise<T> {
+  return apiKeyStorage.run(apiKey, fn);
+}
 
 export type Tier = 'light' | 'default' | 'heavy';
 
@@ -49,6 +60,10 @@ const CACHING_ENABLED = process.env.DELPHI_PROMPT_CACHING !== 'off';
 
 let sharedClient: Anthropic | null = null;
 export function getAnthropic(): Anthropic {
+  const contextKey = apiKeyStorage.getStore();
+  if (contextKey) {
+    return new Anthropic({ apiKey: contextKey });
+  }
   if (!sharedClient) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {

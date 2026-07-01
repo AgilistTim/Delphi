@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Logo } from "../../components/Logo";
 import { DisclosureBanner } from "../../components/DisclosureBanner";
 import { Footer } from "../../components/Footer";
@@ -11,6 +12,7 @@ export default function NewSessionPage() {
   const [experts, setExperts] = useState(5);
   const [rounds, setRounds] = useState(3);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const estTokens = experts * rounds * 3000;
   const estMinutes = Math.max(3, Math.round((experts * rounds * 30) / 60));
@@ -18,6 +20,7 @@ export default function NewSessionPage() {
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setSubmitting(true);
+    setError(null);
     const form = new FormData(e.currentTarget);
     const payload = {
       question: form.get("question"),
@@ -31,15 +34,26 @@ export default function NewSessionPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload)
     });
-    const data = await res.json().catch(() => ({ id: "4f2a" }));
-    router.push(`/app/s/${data.id || "4f2a"}`);
+    if (res.status === 402) {
+      router.push("/app/settings?missing_key=1");
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.id) {
+      setError(data.error ?? "Something went wrong starting the deliberation. Try again.");
+      setSubmitting(false);
+      return;
+    }
+    router.push(`/app/s/${data.id}`);
   }
 
   return (
     <div className="shell">
       <div className="topbar">
         <Logo small />
-        <span className="mono">new decision</span>
+        <Link href="/app" className="btn sm ghost">
+          ← dashboard
+        </Link>
       </div>
 
       <DisclosureBanner compact />
@@ -138,9 +152,15 @@ export default function NewSessionPage() {
 
         <div className="hr dashed" />
 
+        {error && (
+          <div className="box danger" style={{ padding: "8px 12px", fontSize: 13 }}>
+            {error}
+          </div>
+        )}
+
         <div className="row between wrap" style={{ gap: 10 }}>
           <span className="mono" style={{ fontSize: 10 }}>
-            est. {estTokens.toLocaleString()} tokens · ~{estMinutes} min
+            est. {estTokens.toLocaleString()} tokens · ~{estMinutes} min · billed to your Anthropic key
           </span>
           <button className="btn primary lg" type="submit" disabled={submitting}>
             {submitting ? "Starting…" : "Run deliberation →"}

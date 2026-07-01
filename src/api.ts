@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import DelphiAgent from './main.js';
 import { DelphiPrompt } from './types/index.js';
 import { getRunsRepo } from './server/runs-repo.js';
+import { runWithApiKey } from './llm/invoke.js';
 
 /**
  * Ephemeral, per-instance log buffers used only for live SSE streaming of an
@@ -22,7 +23,7 @@ export function createDelphiAPI(_port: number = 3002): express.Express {
   const repo = getRunsRepo();
 
   app.post('/api/v1/analyze', async (req, res) => {
-    const { question, context, constraints, experts, rounds, webhook_url, user_id } = req.body;
+    const { question, context, constraints, experts, rounds, webhook_url, user_id, anthropic_api_key } = req.body;
 
     if (!question || typeof question !== 'string') {
       res.status(400).json({ error: 'question is required' });
@@ -72,42 +73,50 @@ export function createDelphiAPI(_port: number = 3002): express.Express {
         originalWarn(...args);
       };
 
-      try {
-        const delphi = new DelphiAgent();
-        delphi.setMaxRounds(maxRounds);
-        const report = await delphi.runDelphiProcess(prompt, expertCount);
-        const report_md = delphi.renderMarkdown(report);
-        live.status = 'completed';
-        await repo.update(id, {
-          status: 'completed',
-          report,
-          report_md,
-          total_tokens: report.cost_summary?.total_tokens ?? null,
-          cost_usd: report.cost_summary?.estimated_total_cost_usd ?? null,
-          completed_at: Date.now()
-        });
-      } catch (err: unknown) {
-        live.status = 'error';
-        await repo.update(id, {
-          status: 'error',
-          error: err instanceof Error ? err.message : String(err),
-          completed_at: Date.now()
-        });
-      } finally {
-        console.log = originalLog;
-        console.warn = originalWarn;
-      }
-
-      if (webhook_url) {
+      const runLogic = async () => {
         try {
-          await fetch(webhook_url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ run_id: id, status: live.status, completed_at: Date.now() })
+          const delphi = new DelphiAgent();
+          delphi.setMaxRounds(maxRounds);
+          const report = await delphi.runDelphiProcess(prompt, expertCount);
+          const report_md = delphi.renderMarkdown(report);
+          live.status = 'completed';
+          await repo.update(id, {
+            status: 'completed',
+            report,
+            report_md,
+            total_tokens: report.cost_summary?.total_tokens ?? null,
+            cost_usd: report.cost_summary?.estimated_total_cost_usd ?? null,
+            completed_at: Date.now()
           });
-        } catch {
-          // webhook delivery is best-effort
+        } catch (err: unknown) {
+          live.status = 'error';
+          await repo.update(id, {
+            status: 'error',
+            error: err instanceof Error ? err.message : String(err),
+            completed_at: Date.now()
+          });
+        } finally {
+          console.log = originalLog;
+          console.warn = originalWarn;
         }
+
+        if (webhook_url) {
+          try {
+            await fetch(webhook_url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ run_id: id, status: live.status, completed_at: Date.now() })
+            });
+          } catch {
+            // webhook delivery is best-effort
+          }
+        }
+      };
+
+      if (anthropic_api_key) {
+        await runWithApiKey(anthropic_api_key, runLogic);
+      } else {
+        await runLogic();
       }
     });
   });

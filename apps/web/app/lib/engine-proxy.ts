@@ -27,6 +27,7 @@ export async function startRun(body: {
   experts?: number;
   rounds?: number;
   user_id?: string | null;
+  anthropic_api_key?: string;
 }) {
   const res = await engineFetch('/api/v1/analyze', {
     method: 'POST',

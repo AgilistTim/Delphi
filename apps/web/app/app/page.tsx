@@ -6,11 +6,12 @@ import { Footer } from "../components/Footer";
 import { config } from "../lib/config";
 import { getUser } from "../lib/supabase/server";
 import { listRuns } from "../lib/runs";
+import { hasUserKey } from "../lib/keys";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [user, runs] = await Promise.all([getUser(), listRuns()]);
+  const [user, runs, keySet] = await Promise.all([getUser(), listRuns(), hasUserKey()]);
   const email = user?.email ?? "you@local";
 
   const usedSessions = runs.length;
@@ -29,6 +30,19 @@ export default async function DashboardPage() {
       </div>
 
       <DisclosureBanner compact />
+
+      {!keySet && (
+        <div className="box accent" style={{ marginTop: 14, padding: "10px 14px" }}>
+          <div className="row between">
+            <span style={{ fontSize: 14 }}>
+              <strong>Add your Anthropic API key</strong> to run deliberations.
+            </span>
+            <Link href="/app/settings" className="btn primary sm">
+              Add key →
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="sidebar-layout" style={{ marginTop: 18 }}>
         <aside className="stack tight">
@@ -69,6 +83,19 @@ export default async function DashboardPage() {
           </Link>
 
           <div className="hr dashed" />
+          <div className="mono">account</div>
+          <Link
+            href="/app/settings"
+            className="mono"
+            style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}
+          >
+            → settings
+            {!keySet && (
+              <span className="pill danger" style={{ fontSize: 8, padding: "1px 6px" }}>
+                !
+              </span>
+            )}
+          </Link>
           <a className="mono" style={{ fontSize: 10 }} href={config.calendlyUrl}>
             → book a call with Tim
           </a>
