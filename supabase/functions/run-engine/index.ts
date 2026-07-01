@@ -1,6 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.40.1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +10,7 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 
 interface ProgressEntry {
   phase: string;
@@ -24,7 +24,7 @@ interface ExpertResponse {
   position: string;
   reasoning: string;
   confidence: number;
-  sources: { title: string; url: string; date?: string; relevance?: string }[];
+  sources: { title: string; url: string; relevance?: string }[];
 }
 
 interface RoundSynthesis {
@@ -44,8 +44,8 @@ interface RoundSynthesis {
 function parseJson<T>(text: string): T | null {
   if (!text) return null;
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const raw = fenced ? fenced[1] : text;
-  const objMatch = raw.match(/[\[{][\s\S]*[\]}]/);
+  const candidate = fenced ? fenced[1] : text;
+  const objMatch = candidate.match(/[\[{][\s\S]*[\]}]/);
   if (!objMatch) return null;
   try {
     return JSON.parse(objMatch[0]) as T;
@@ -59,20 +59,35 @@ function parseJson<T>(text: string): T | null {
 }
 
 async function callClaude(
-  client: Anthropic,
+  apiKey: string,
   system: string,
   userMessage: string,
   maxTokens = 4000,
   temperature = 0.5
 ): Promise<string> {
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: maxTokens,
-    temperature,
-    system,
-    messages: [{ role: "user", content: userMessage }],
+  const res = await fetch(ANTHROPIC_API, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: maxTokens,
+      temperature,
+      system,
+      messages: [{ role: "user", content: userMessage }],
+    }),
   });
-  return response.content
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Anthropic API error ${res.status}: ${errBody}`);
+  }
+
+  const data = await res.json();
+  return (data.content || [])
     .filter((b: any) => b.type === "text")
     .map((b: any) => b.text)
     .join("\n")
@@ -119,7 +134,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Fetch the run
     const { data: run, error: runError } = await supabase
       .from("runs")
       .select("*")
@@ -140,7 +154,6 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Fetch user's API key
     const { data: keyRow } = await supabase
       .from("user_keys")
       .select("anthropic_key")
@@ -157,10 +170,12 @@ Deno.serve(async (req: Request) => {
         })
         .eq("id", runId);
       return new Response(
-        JSON.stringify({ error: "No API key configured for user" }),
+        JSON.stringify({ error: "No API key configured" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const apiKey = keyRow.anthropic_key;
 
     // Mark as running
     await supabase
@@ -169,12 +184,10 @@ Deno.serve(async (req: Request) => {
       .eq("id", runId);
 
     const progress = new ProgressTracker(supabase, runId);
-    const anthropic = new Anthropic({ apiKey: keyRow.anthropic_key });
-
     const question = run.question;
     const context = run.context || "";
-    const expertCount = run.experts || 5;
-    const maxRounds = run.rounds || 3;
+    const expertCount = Math.min(run.experts || 5, 7);
+    const maxRounds = Math.min(run.rounds || 3, 3);
 
     await progress.log("init", `Starting deliberation: ${expertCount} experts, ${maxRounds} rounds`);
 
@@ -182,15 +195,15 @@ Deno.serve(async (req: Request) => {
     await progress.log("personas", "Generating expert panel...");
 
     const personaText = await callClaude(
-      anthropic,
-      "You generate diverse expert personas for a Delphi deliberation panel. Return a JSON array.",
+      apiKey,
+      "You generate diverse expert personas for a Delphi deliberation panel. Return a JSON array only, no other text.",
       `Generate ${expertCount} diverse expert personas to deliberate on: "${question}"
 
 Return JSON array:
 [{"role": "Role title", "expertise": "Domain expertise", "perspective": "Their likely perspective/bias"}]
 
 Requirements:
-- Diverse viewpoints (at least one skeptic, one advocate, one practitioner)
+- Diverse viewpoints (include skeptics, advocates, and practitioners)
 - Real-world plausible roles
 - Distinct expertise areas`,
       2000,
@@ -209,36 +222,36 @@ Requirements:
     const panelSummary = personas
       .map((p: any) => `${p.role} (${p.expertise})`)
       .join(", ");
-    await progress.log(
-      "panel_assembled",
-      `Panel: ${panelSummary}`
-    );
+    await progress.log("panel_assembled", `Panel: ${panelSummary}`);
 
     const allResponses: ExpertResponse[] = [];
     const roundSyntheses: RoundSynthesis[] = [];
 
     // Execute rounds
     for (let round = 1; round <= maxRounds; round++) {
-      await progress.log(`round_${round}_start`, `Round ${round} of ${maxRounds}: Gathering expert opinions`);
+      await progress.log(
+        `round_${round}_start`,
+        `Round ${round}/${maxRounds}: Gathering ${expertCount} expert opinions`
+      );
 
       const previousSynthesis =
         round > 1
-          ? `Consensus areas: ${roundSyntheses[round - 2].consensus_areas.join("; ")}\nDivergence: ${roundSyntheses[round - 2].divergence_areas.join("; ")}`
+          ? `Consensus: ${roundSyntheses[round - 2].consensus_areas.join("; ")}\nDivergence: ${roundSyntheses[round - 2].divergence_areas.join("; ")}`
           : undefined;
 
-      // Get expert responses (parallel)
-      const responsePromises = personas.map((persona: any) => {
+      // Get expert responses sequentially to avoid rate limits
+      const responses: ExpertResponse[] = [];
+      for (let i = 0; i < personas.length; i++) {
+        const persona = personas[i];
         const systemPrompt = `You are ${persona.role}, an expert in ${persona.expertise}. Your perspective: ${persona.perspective}.
 
-Provide your expert analysis as a JSON object:
+Provide your expert analysis as a JSON object only:
 {
   "position": "Your clear position (1-2 sentences)",
   "reasoning": "Detailed reasoning (3-5 sentences)",
   "confidence": 7,
   "sources": [{"title": "Source", "url": "https://example.com", "relevance": "Why relevant"}]
-}
-
-Be specific and maintain your distinct perspective.`;
+}`;
 
         let userMsg = `Question: ${question}`;
         if (context) userMsg += `\n\nContext: ${context}`;
@@ -247,46 +260,56 @@ Be specific and maintain your distinct perspective.`;
         }
         userMsg += `\n\nRound ${round}. Respond with valid JSON only.`;
 
-        return callClaude(anthropic, systemPrompt, userMsg, 2000, 0.6).then(
-          (text) => {
-            const parsed = parseJson<any>(text);
-            return {
-              agent_id: `expert-${persona.role.toLowerCase().replace(/\s+/g, "-")}`,
-              expertise_area: persona.expertise,
-              position: parsed?.position || "Position unavailable",
-              reasoning: parsed?.reasoning || "Reasoning unavailable",
-              confidence: Math.max(1, Math.min(10, parsed?.confidence || 6)),
-              sources: Array.isArray(parsed?.sources) ? parsed.sources.slice(0, 3) : [],
-            } as ExpertResponse;
-          }
-        );
-      });
+        try {
+          const text = await callClaude(apiKey, systemPrompt, userMsg, 2000, 0.6);
+          const parsed = parseJson<any>(text);
+          responses.push({
+            agent_id: `expert-${persona.role.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+            expertise_area: persona.expertise,
+            position: parsed?.position || "Position unavailable",
+            reasoning: parsed?.reasoning || "Reasoning unavailable",
+            confidence: Math.max(1, Math.min(10, parsed?.confidence || 6)),
+            sources: Array.isArray(parsed?.sources) ? parsed.sources.slice(0, 3) : [],
+          });
+        } catch (err: any) {
+          responses.push({
+            agent_id: `expert-${i}`,
+            expertise_area: persona.expertise,
+            position: `Error: ${err.message?.slice(0, 100)}`,
+            reasoning: "This expert failed to respond.",
+            confidence: 0,
+            sources: [],
+          });
+        }
+      }
 
-      const responses = await Promise.all(responsePromises);
       allResponses.push(...responses);
 
-      // Log expert positions summary
-      const positionsSummary = responses
-        .map((r: ExpertResponse) => `${r.expertise_area}: "${r.position.slice(0, 80)}..." (${r.confidence}/10)`)
+      const validResponses = responses.filter((r) => r.confidence > 0);
+      const positionsSummary = validResponses
+        .map(
+          (r) =>
+            `${r.expertise_area}: "${r.position.slice(0, 100)}" (${r.confidence}/10)`
+        )
         .join("\n");
       await progress.log(
         `round_${round}_responses`,
-        `Expert positions:\n${positionsSummary}`
+        `${validResponses.length}/${personas.length} experts responded:\n${positionsSummary}`
       );
 
       // Synthesize
-      await progress.log(`round_${round}_synthesis`, "Synthesizing expert positions...");
+      await progress.log(`round_${round}_synthesis`, "Synthesizing positions...");
 
       const synthesisText = await callClaude(
-        anthropic,
-        "You synthesize expert opinions into structured summaries. Return valid JSON only.",
-        `Synthesize these ${responses.length} expert responses from round ${round}:
+        apiKey,
+        "You synthesize expert opinions. Return valid JSON only, no other text.",
+        `Synthesize ${validResponses.length} expert responses from round ${round}:
 
-${responses.map((r: ExpertResponse, i: number) => `Expert ${i + 1} (${r.expertise_area}): ${r.position} [confidence: ${r.confidence}/10]`).join("\n\n")}
+${validResponses.map((r, i) => `Expert ${i + 1} (${r.expertise_area}): ${r.position} [confidence: ${r.confidence}/10]`).join("\n\n")}
 
 Return JSON:
 {
-  "clusters": [{"theme": "Theme", "positions": ["Position 1"], "expert_ids": ["id"], "confidence_range": [5, 8]}],
+  "clusters": [{"theme": "Theme", "positions": ["Position"], "expert_ids": ["id"], "confidence_range": [5, 8]}],
   "consensus_areas": ["Area of agreement"],
   "divergence_areas": ["Area of disagreement"],
   "key_insights": ["Key insight"]
@@ -297,8 +320,8 @@ Return JSON:
 
       const synthParsed = parseJson<any>(synthesisText);
       const avgConfidence =
-        responses.reduce((sum: number, r: ExpertResponse) => sum + r.confidence, 0) /
-        responses.length;
+        validResponses.reduce((sum, r) => sum + r.confidence, 0) /
+        Math.max(1, validResponses.length);
 
       const synthesis: RoundSynthesis = {
         round_number: round,
@@ -313,52 +336,49 @@ Return JSON:
       const synthSummary = [
         synthesis.consensus_areas.length > 0
           ? `Consensus: ${synthesis.consensus_areas.join("; ")}`
-          : null,
+          : "No clear consensus yet",
         synthesis.divergence_areas.length > 0
           ? `Divergence: ${synthesis.divergence_areas.join("; ")}`
           : null,
-        `Average confidence: ${avgConfidence.toFixed(1)}/10`,
+        `Avg confidence: ${avgConfidence.toFixed(1)}/10`,
       ]
         .filter(Boolean)
         .join("\n");
-      await progress.log(`round_${round}_complete`, `Round ${round} synthesis:\n${synthSummary}`);
+      await progress.log(`round_${round}_complete`, synthSummary);
 
-      // Early convergence check
+      // Early convergence
       if (round >= 2 && avgConfidence >= 7.5) {
-        const prevSynthesis = roundSyntheses[round - 2];
+        const prev = roundSyntheses[round - 2];
         if (
-          synthesis.consensus_areas.length >= prevSynthesis.consensus_areas.length &&
+          synthesis.consensus_areas.length >= prev.consensus_areas.length &&
           synthesis.divergence_areas.length <= 1
         ) {
-          await progress.log("convergence", `Early convergence reached after round ${round}`);
+          await progress.log("convergence", `Early convergence after round ${round}`);
           break;
         }
       }
     }
 
-    // Phase 3: Stress tests
-    await progress.log("stress_tests", "Generating contrarian stress tests...");
+    // Phase: Stress tests
+    await progress.log("stress_tests", "Running contrarian stress tests...");
 
     const finalSynthesis = roundSyntheses[roundSyntheses.length - 1];
     const consensusPosition =
       finalSynthesis.consensus_areas[0] || "The panel's dominant position";
 
     const stressText = await callClaude(
-      anthropic,
-      "You are a contrarian stress-tester. Challenge reasoning quality, not conclusions. Be sharp and direct.",
-      `The consensus position is: "${consensusPosition}"
+      apiKey,
+      "You stress-test reasoning. Be sharp and direct. Return JSON only.",
+      `Consensus: "${consensusPosition}"
+Areas: ${finalSynthesis.consensus_areas.join("; ")}
 
-Consensus areas: ${finalSynthesis.consensus_areas.join("; ")}
-
-Generate 4 stress tests as JSON:
+Return JSON:
 {
-  "lossy_simplification": "What nuance is being averaged away?",
-  "context_flip": "Under what specific condition does this advice reverse?",
-  "incentive_misalignment": "Who benefits from this consensus being accepted, and who loses?",
-  "second_order_failure": "If everyone follows this advice, how does initial success create later failure?"
-}
-
-Each answer: 1-2 sharp sentences. No hedging.`,
+  "lossy_simplification": "What nuance is lost? (1-2 sentences)",
+  "context_flip": "When does this advice reverse? (1-2 sentences)",
+  "incentive_misalignment": "Who benefits vs loses? (1-2 sentences)",
+  "second_order_failure": "How does success create later failure? (1-2 sentences)"
+}`,
       1500,
       0.7
     );
@@ -370,26 +390,26 @@ Each answer: 1-2 sharp sentences. No hedging.`,
       second_order_failure: "Analysis unavailable",
     };
 
-    await progress.log("stress_tests_complete", [
-      `Lossy simplification: ${stressTests.lossy_simplification}`,
-      `Context flip: ${stressTests.context_flip}`,
-    ].join("\n"));
+    await progress.log(
+      "stress_tests_complete",
+      `Stress tests complete:\n- Simplification: ${stressTests.lossy_simplification}\n- Context flip: ${stressTests.context_flip}`
+    );
 
-    // Phase 4: Final consensus
-    await progress.log("final_synthesis", "Generating final consensus report...");
+    // Phase: Final report
+    await progress.log("final_synthesis", "Generating final consensus...");
 
     const consensusText = await callClaude(
-      anthropic,
-      "Generate a clear consensus summary from a Delphi process. Return JSON only.",
+      apiKey,
+      "Generate a clear consensus summary. Return JSON only.",
       `Question: "${question}"
-Final synthesis consensus areas: ${finalSynthesis.consensus_areas.join("; ")}
+Consensus areas: ${finalSynthesis.consensus_areas.join("; ")}
 Key insights: ${finalSynthesis.key_insights.join("; ")}
-Average confidence: ${finalSynthesis.average_confidence.toFixed(1)}/10
-Expert count: ${allResponses.length / roundSyntheses.length}
+Avg confidence: ${finalSynthesis.average_confidence.toFixed(1)}/10
+Experts: ${expertCount}
 
 Return JSON:
 {
-  "final_position": "Clear consensus statement (2-3 sentences)",
+  "final_position": "Clear consensus (2-3 sentences)",
   "confidence_score": ${finalSynthesis.average_confidence.toFixed(1)},
   "consensus_type": "strong|conditional|divergent"
 }`,
@@ -406,7 +426,7 @@ Return JSON:
 
     const lastRoundResponses = allResponses.slice(-personas.length);
 
-    const report: Record<string, any> = {
+    const report = {
       prompt: { question, context },
       convergence_analysis: {
         rounds_completed: roundSyntheses.length,
@@ -431,7 +451,7 @@ Return JSON:
       generated_at: new Date().toISOString(),
     };
 
-    // Generate markdown
+    // Markdown
     let md = `# Delphi Consensus Report\n\n`;
     md += `**Question:** ${question}\n\n`;
     md += `## Consensus\n\n`;
@@ -439,8 +459,8 @@ Return JSON:
     md += `**Confidence:** ${consensus.confidence_score?.toFixed(1)}/10\n\n`;
     md += `${consensus.final_position}\n\n`;
     md += `## Stress Tests\n\n`;
-    for (const test of report.stress_tests) {
-      md += `**${test.type}:** ${test.finding}\n\n`;
+    for (const t of report.stress_tests) {
+      md += `**${t.type}:** ${t.finding}\n\n`;
     }
     md += `## Expert Positions\n\n`;
     for (const expert of lastRoundResponses) {
@@ -451,13 +471,15 @@ Return JSON:
     }
     md += `---\n*Generated by Delphi Agent*\n`;
 
-    // Rough token estimate based on actual API calls made
-    const callCount = 1 + personas.length * roundSyntheses.length + roundSyntheses.length + 2;
+    const callCount =
+      1 + personas.length * roundSyntheses.length + roundSyntheses.length + 2;
     const totalTokens = callCount * 2500;
 
-    await progress.log("complete", `Deliberation complete. ${consensus.consensus_type} consensus at ${consensus.confidence_score?.toFixed(1)}/10 confidence.`);
+    await progress.log(
+      "complete",
+      `Done! ${consensus.consensus_type} consensus at ${consensus.confidence_score?.toFixed(1)}/10. ${callCount} API calls made.`
+    );
 
-    // Update run as completed
     await supabase
       .from("runs")
       .update({
@@ -474,20 +496,23 @@ Return JSON:
       JSON.stringify({ status: "completed", run_id: runId }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (err) {
+  } catch (err: any) {
     console.error("Engine error:", err);
     if (runId) {
-      await supabase
+      const supabase2 = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      await supabase2
         .from("runs")
         .update({
           status: "error",
-          error: err instanceof Error ? err.message : String(err),
+          error: err?.message || String(err),
           completed_at: new Date().toISOString(),
         })
         .eq("id", runId);
     }
     return new Response(
-      JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
+      JSON.stringify({ error: err?.message || String(err) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
