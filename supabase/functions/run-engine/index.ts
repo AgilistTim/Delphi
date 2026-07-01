@@ -73,7 +73,7 @@ async function callClaude(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-5-latest",
+      model: "claude-sonnet-5",
       max_tokens: maxTokens,
       temperature,
       system,
