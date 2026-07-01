@@ -122,6 +122,7 @@ export function SessionPage() {
           <p className="deliberation-note">
             Make sure you have an Anthropic API key configured in Settings.
           </p>
+          <RetryButton runId={run.id} />
         </div>
       )}
 
@@ -298,6 +299,57 @@ function CompletedSession({ run }: { run: RunDetail }) {
       )}
 
       <Link to="/app" className="btn btn-secondary" style={{ marginTop: 24 }}>Back to dashboard</Link>
+    </div>
+  );
+}
+
+function RetryButton({ runId }: { runId: string }) {
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  async function trigger() {
+    setStatus("sending");
+    setErrorMsg("");
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const res = await fetch(`${supabaseUrl}/functions/v1/run-engine`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": anonKey,
+        },
+        body: JSON.stringify({ run_id: runId }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        setStatus("error");
+        setErrorMsg(`${res.status}: ${body.slice(0, 200)}`);
+      } else {
+        setStatus("sent");
+      }
+    } catch (err: any) {
+      setStatus("error");
+      setErrorMsg(err?.message || "Network error");
+    }
+  }
+
+  if (status === "sent") {
+    return <p className="deliberation-note" style={{ color: "var(--success)" }}>Engine triggered -- progress should appear shortly.</p>;
+  }
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <button
+        className="btn btn-secondary"
+        onClick={trigger}
+        disabled={status === "sending"}
+      >
+        {status === "sending" ? "Triggering..." : "Retry: trigger engine"}
+      </button>
+      {status === "error" && (
+        <p className="form-error" style={{ marginTop: 8, fontSize: 12 }}>{errorMsg}</p>
+      )}
     </div>
   );
 }
