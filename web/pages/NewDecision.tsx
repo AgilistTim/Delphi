@@ -57,6 +57,21 @@ export function NewDecisionPage() {
       return;
     }
 
+    // Trigger the engine edge function to process the run
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (supabaseUrl && token) {
+      fetch(`${supabaseUrl}/functions/v1/run-engine`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ run_id: data.id }),
+      }).catch(() => {});
+    }
+
     navigate(`/app/s/${data.id}`);
   }
 
