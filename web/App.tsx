@@ -7,6 +7,10 @@ import { DashboardPage } from "./pages/Dashboard";
 import { NewDecisionPage } from "./pages/NewDecision";
 import { SettingsPage } from "./pages/Settings";
 import { SessionPage } from "./pages/Session";
+import { AdminLayout } from "./pages/admin/Layout";
+import { AdminOverview } from "./pages/admin/Overview";
+import { AdminRuns } from "./pages/admin/Runs";
+import { AdminUsers } from "./pages/admin/Users";
 import { Router, Routes } from "./lib/router";
 
 const routes = [
@@ -20,6 +24,15 @@ const routes = [
       { path: "new", element: <NewDecisionPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "s/:id", element: <SessionPage /> },
+      {
+        path: "admin",
+        element: <AdminLayout />,
+        children: [
+          { path: "", element: <AdminOverview /> },
+          { path: "runs", element: <AdminRuns /> },
+          { path: "users", element: <AdminUsers /> },
+        ],
+      },
     ],
   },
 ];

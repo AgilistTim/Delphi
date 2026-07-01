@@ -84,38 +84,30 @@ function matchPath(pattern: string, pathname: string): Record<string, string> | 
   return params;
 }
 
-interface RouteConfig {
+export interface RouteConfig {
   path: string;
   element: ReactNode;
   children?: RouteConfig[];
 }
 
-export function Routes({ routes }: { routes: RouteConfig[] }) {
-  const ctx = useContext(RouterContext);
-  if (!ctx) throw new Error("Routes must be used within Router");
-  const { path } = ctx;
-
+function resolveRoutes(routes: RouteConfig[], basePath: string, pathname: string, ctx: RouterState): ReactNode | null {
   for (const route of routes) {
+    const fullPath = route.path === "" ? basePath : `${basePath}/${route.path}`.replace(/\/+/g, "/");
+
     if (route.children) {
-      const prefixMatch = path === route.path || path.startsWith(route.path + "/");
+      const prefixMatch = pathname === fullPath || pathname.startsWith(fullPath + "/");
       if (prefixMatch) {
-        const childPath = path === route.path ? route.path : path;
-        for (const child of route.children) {
-          const fullChildPath = child.path === "" ? route.path : `${route.path}/${child.path}`;
-          const params = matchPath(fullChildPath, childPath);
-          if (params) {
-            return (
-              <RouterContext.Provider value={{ ...ctx, params }}>
-                <ParentWithOutlet parent={route.element}>
-                  {child.element}
-                </ParentWithOutlet>
-              </RouterContext.Provider>
-            );
-          }
+        const childResult = resolveRoutes(route.children, fullPath, pathname, ctx);
+        if (childResult) {
+          return (
+            <ParentWithOutlet parent={route.element}>
+              {childResult}
+            </ParentWithOutlet>
+          );
         }
       }
     } else {
-      const params = matchPath(route.path, path);
+      const params = matchPath(fullPath, pathname);
       if (params) {
         return (
           <RouterContext.Provider value={{ ...ctx, params }}>
@@ -125,8 +117,15 @@ export function Routes({ routes }: { routes: RouteConfig[] }) {
       }
     }
   }
-
   return null;
+}
+
+export function Routes({ routes }: { routes: RouteConfig[] }) {
+  const ctx = useContext(RouterContext);
+  if (!ctx) throw new Error("Routes must be used within Router");
+
+  const result = resolveRoutes(routes, "", ctx.path, ctx);
+  return <>{result}</>;
 }
 
 const OutletContext = createContext<ReactNode>(null);
@@ -168,7 +167,7 @@ export function NavLink({ to, end, className, children }: {
   children: ReactNode;
 }) {
   const { path } = useContext(RouterContext)!;
-  const isActive = end ? path === to : path.startsWith(to);
+  const isActive = end ? path === to : (path === to || path.startsWith(to + "/"));
   const cls = typeof className === "function" ? className({ isActive }) : className;
 
   const navigate = useNavigate();

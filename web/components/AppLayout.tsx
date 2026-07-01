@@ -1,8 +1,11 @@
 import { NavLink, Outlet } from "../lib/router";
 import { useAuth } from "./AuthProvider";
 
+const ADMIN_EMAIL = "tim@agilist.co.uk";
+
 export function AppLayout() {
   const { user, signOut } = useAuth();
+  const isAdmin = user?.email === ADMIN_EMAIL;
 
   return (
     <div className="app-layout">
@@ -21,6 +24,16 @@ export function AppLayout() {
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 10a2 2 0 100-4 2 2 0 000 4z" stroke="currentColor" strokeWidth="1.5"/><path d="M13.5 8a5.5 5.5 0 01-.3 1.8l1.3 1-1 1.7-1.5-.6a5.5 5.5 0 01-1.5.9L10 14H8l-.5-1.2a5.5 5.5 0 01-1.5-.9l-1.5.6-1-1.7 1.3-1A5.5 5.5 0 014.5 8c0-.6.1-1.2.3-1.8l-1.3-1 1-1.7 1.5.6a5.5 5.5 0 011.5-.9L8 2h2l.5 1.2c.6.2 1 .5 1.5.9l1.5-.6 1 1.7-1.3 1c.2.6.3 1.2.3 1.8z" stroke="currentColor" strokeWidth="1.5"/></svg>
             Settings
           </NavLink>
+
+          {isAdmin && (
+            <>
+              <div className="sidebar-divider" />
+              <NavLink to="/app/admin" className={({ isActive }) => `sidebar-link sidebar-link-admin ${isActive ? "active" : ""}`}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                Admin
+              </NavLink>
+            </>
+          )}
         </nav>
         <div className="sidebar-footer">
           <div className="sidebar-user">{user?.email}</div>

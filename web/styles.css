@@ -1182,3 +1182,230 @@ ul { list-style: none; }
 
   .form-row { grid-template-columns: 1fr; }
 }
+
+/* ─── Admin ─── */
+.sidebar-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 12px 12px;
+}
+
+.sidebar-link-admin {
+  color: rgba(250, 250, 249, 0.5) !important;
+  font-size: 13px !important;
+}
+
+.admin-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.admin-nav {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 28px;
+  width: fit-content;
+}
+
+.admin-nav-link {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  text-decoration: none;
+}
+
+.admin-nav-link:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  text-decoration: none;
+}
+
+.admin-nav-link.active {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}
+
+.admin-content {
+  flex: 1;
+}
+
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.admin-stat-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+  transition: all 0.15s;
+}
+
+.admin-stat-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.admin-stat-value {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.admin-stat-success { color: var(--success); }
+.admin-stat-warning { color: var(--warning); }
+.admin-stat-error { color: var(--error); }
+
+.admin-stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.admin-section {
+  margin-bottom: 32px;
+}
+
+.admin-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.admin-section-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.admin-table-wrap {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.admin-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-subtle);
+  white-space: nowrap;
+}
+
+.admin-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table tbody tr:hover {
+  background: var(--bg-subtle);
+}
+
+.admin-table-question {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-table-question a {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.admin-table-question a:hover {
+  color: var(--accent);
+}
+
+.admin-table-date {
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.admin-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.admin-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: capitalize;
+}
+
+.admin-filter-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.admin-filter-btn.active {
+  background: var(--bg-accent);
+  color: var(--text-inverse);
+  border-color: var(--bg-accent);
+}
+
+.admin-filter-count {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.admin-empty {
+  text-align: center;
+  padding: 40px 24px;
+  color: var(--text-tertiary);
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .admin-stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
