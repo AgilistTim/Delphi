@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "../lib/router";
 import { useAuth } from "./AuthProvider";
 
 export function AppLayout() {

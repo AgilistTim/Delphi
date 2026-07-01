@@ -1,4 +1,3 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./components/AuthProvider";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AppLayout } from "./components/AppLayout";
@@ -8,22 +7,29 @@ import { DashboardPage } from "./pages/Dashboard";
 import { NewDecisionPage } from "./pages/NewDecision";
 import { SettingsPage } from "./pages/Settings";
 import { SessionPage } from "./pages/Session";
+import { Router, Routes } from "./lib/router";
+
+const routes = [
+  { path: "/", element: <LandingPage /> },
+  { path: "/sign-in", element: <SignInPage /> },
+  {
+    path: "/app",
+    element: <ProtectedRoute><AppLayout /></ProtectedRoute>,
+    children: [
+      { path: "", element: <DashboardPage /> },
+      { path: "new", element: <NewDecisionPage /> },
+      { path: "settings", element: <SettingsPage /> },
+      { path: "s/:id", element: <SessionPage /> },
+    ],
+  },
+];
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <Router>
       <AuthProvider>
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/sign-in" element={<SignInPage />} />
-          <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-            <Route index element={<DashboardPage />} />
-            <Route path="new" element={<NewDecisionPage />} />
-            <Route path="settings" element={<SettingsPage />} />
-            <Route path="s/:id" element={<SessionPage />} />
-          </Route>
-        </Routes>
+        <Routes routes={routes} />
       </AuthProvider>
-    </BrowserRouter>
+    </Router>
   );
 }

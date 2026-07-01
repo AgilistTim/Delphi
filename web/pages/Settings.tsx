@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams } from "../lib/router";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../components/AuthProvider";
 

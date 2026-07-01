@@ -9,9 +9,5 @@ export default defineConfig({
   },
   build: {
     outDir: "dist-web"
-  },
-  optimizeDeps: {
-    include: ["react-router-dom", "react-router", "@supabase/supabase-js"],
-    force: true
   }
 });

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useLocation, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "../lib/router";
 import { useAuth } from "../components/AuthProvider";
 
 export function SignInPage() {
@@ -26,10 +26,7 @@ export function SignInPage() {
 
     if (result.error) {
       setError(result.error);
-    } else if (!isSignUp) {
-      navigate(from, { replace: true });
     } else {
-      setError(null);
       navigate(from, { replace: true });
     }
   }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "../lib/router";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../components/AuthProvider";
 

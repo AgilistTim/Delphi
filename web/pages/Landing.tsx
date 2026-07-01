@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "../lib/router";
 import { useAuth } from "../components/AuthProvider";
 
 export function LandingPage() {

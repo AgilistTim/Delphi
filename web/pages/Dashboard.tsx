@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/router";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../components/AuthProvider";
 
@@ -94,7 +94,7 @@ export function DashboardPage() {
           {runs.map((run) => (
             <Link
               key={run.id}
-              to={run.status === "completed" ? `/app/s/${run.id}` : `/app/s/${run.id}`}
+              to={`/app/s/${run.id}`}
               className="run-card"
             >
               <div className="run-card-top">
