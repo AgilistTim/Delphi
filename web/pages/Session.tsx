@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "../lib/router";
 import { supabase } from "../lib/supabase";
 
+interface ProgressEntry {
+  phase: string;
+  detail: string;
+  timestamp: string;
+}
+
 interface RunDetail {
   id: string;
   question: string;
@@ -14,6 +20,7 @@ interface RunDetail {
   report: any;
   report_md: string | null;
   error: string | null;
+  progress: ProgressEntry[] | null;
 }
 
 export function SessionPage() {
@@ -24,7 +31,7 @@ export function SessionPage() {
 
   useEffect(() => {
     loadRun();
-    const interval = setInterval(loadRun, 3000);
+    const interval = setInterval(loadRun, 2000);
     return () => clearInterval(interval);
   }, [id]);
 
@@ -70,7 +77,10 @@ export function SessionPage() {
         <div className="alert alert-error">
           <strong>Deliberation failed:</strong> {run.error || "Unknown error"}
         </div>
-        <Link to="/app" className="btn btn-secondary">Back to dashboard</Link>
+        {run.progress && run.progress.length > 0 && (
+          <ProgressLog entries={run.progress} />
+        )}
+        <Link to="/app" className="btn btn-secondary" style={{ marginTop: 16 }}>Back to dashboard</Link>
       </div>
     );
   }
@@ -79,7 +89,9 @@ export function SessionPage() {
     return <CompletedSession run={run} />;
   }
 
-  const progress = Math.min((elapsed / 360) * 100, 95);
+  const progress = run.progress || [];
+  const hasProgress = progress.length > 0;
+  const latestPhase = hasProgress ? progress[progress.length - 1] : null;
 
   return (
     <div className="session-page">
@@ -93,46 +105,98 @@ export function SessionPage() {
 
       <div className="deliberation-progress">
         <div className="progress-bar">
-          <div className="progress-fill" style={{ width: `${progress}%` }} />
+          <div className="progress-fill" style={{ width: `${estimateProgress(progress)}%` }} />
         </div>
         <div className="progress-meta">
           <span>{formatTime(elapsed)} elapsed</span>
-          <span>{Math.round(progress)}%</span>
+          {latestPhase && <span className="progress-current-phase">{phaseLabel(latestPhase.phase)}</span>}
         </div>
       </div>
 
-      <div className="deliberation-phases">
-        <Phase active={elapsed < 30} done={elapsed >= 30} label="Panel assembly" desc="Generating expert personas and initial research" />
-        <Phase active={elapsed >= 30 && elapsed < 120} done={elapsed >= 120} label="Round 1" desc="Initial responses, synthesis, and stress tests" />
-        <Phase active={elapsed >= 120 && elapsed < 210} done={elapsed >= 210} label="Round 2" desc="Refined positions and cross-examination" />
-        <Phase active={elapsed >= 210} done={false} label="Final synthesis" desc="Decision canvas and oppositional case" />
-      </div>
+      {hasProgress ? (
+        <ProgressLog entries={progress} />
+      ) : (
+        <div className="deliberation-waiting">
+          <div className="loading-spinner" />
+          <p>Waiting for engine to start processing...</p>
+          <p className="deliberation-note">
+            Make sure you have an Anthropic API key configured in Settings.
+          </p>
+        </div>
+      )}
 
-      <p className="deliberation-note">
-        You can leave this page. The session will continue in the background.
+      <p className="deliberation-note" style={{ marginTop: 24 }}>
+        This page updates automatically every 2 seconds.
       </p>
     </div>
   );
 }
 
-function Phase({ active, done, label, desc }: { active: boolean; done: boolean; label: string; desc: string }) {
+function ProgressLog({ entries }: { entries: ProgressEntry[] }) {
   return (
-    <div className={`phase ${active ? "phase-active" : ""} ${done ? "phase-done" : ""}`}>
-      <div className="phase-indicator">
-        {done ? (
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3 3 7-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-        ) : active ? (
-          <div className="phase-dot active" />
-        ) : (
-          <div className="phase-dot" />
-        )}
-      </div>
-      <div>
-        <div className="phase-label">{label}</div>
-        <div className="phase-desc">{desc}</div>
-      </div>
+    <div className="progress-log">
+      {entries.map((entry, i) => (
+        <div key={i} className={`progress-entry ${i === entries.length - 1 ? "progress-entry-latest" : ""}`}>
+          <div className="progress-entry-header">
+            <span className={`progress-phase-badge ${phaseColor(entry.phase)}`}>
+              {phaseLabel(entry.phase)}
+            </span>
+            <span className="progress-entry-time">
+              {new Date(entry.timestamp).toLocaleTimeString()}
+            </span>
+          </div>
+          <div className="progress-entry-detail">{entry.detail}</div>
+        </div>
+      ))}
     </div>
   );
+}
+
+function phaseLabel(phase: string): string {
+  if (phase === "init") return "Init";
+  if (phase === "personas") return "Personas";
+  if (phase === "panel_assembled") return "Panel";
+  if (phase.startsWith("round_") && phase.endsWith("_start")) return `Round ${phase.match(/\d+/)?.[0]} Start`;
+  if (phase.startsWith("round_") && phase.endsWith("_responses")) return `Round ${phase.match(/\d+/)?.[0]} Responses`;
+  if (phase.startsWith("round_") && phase.endsWith("_synthesis")) return `Round ${phase.match(/\d+/)?.[0]} Synthesis`;
+  if (phase.startsWith("round_") && phase.endsWith("_complete")) return `Round ${phase.match(/\d+/)?.[0]} Complete`;
+  if (phase === "convergence") return "Convergence";
+  if (phase === "stress_tests") return "Stress Tests";
+  if (phase === "stress_tests_complete") return "Stress Tests";
+  if (phase === "final_synthesis") return "Final";
+  if (phase === "complete") return "Done";
+  return phase;
+}
+
+function phaseColor(phase: string): string {
+  if (phase === "complete") return "progress-phase-success";
+  if (phase === "panel_assembled") return "progress-phase-info";
+  if (phase.includes("synthesis") || phase.includes("complete")) return "progress-phase-accent";
+  if (phase.includes("stress")) return "progress-phase-warning";
+  return "";
+}
+
+function estimateProgress(entries: ProgressEntry[]): number {
+  if (entries.length === 0) return 2;
+  const last = entries[entries.length - 1].phase;
+  if (last === "complete") return 100;
+  if (last === "final_synthesis") return 90;
+  if (last.includes("stress")) return 80;
+  if (last === "convergence") return 75;
+  const roundMatch = last.match(/round_(\d+)/);
+  if (roundMatch) {
+    const round = parseInt(roundMatch[1]);
+    const base = 15 + (round - 1) * 20;
+    if (last.endsWith("_complete")) return base + 18;
+    if (last.endsWith("_synthesis")) return base + 12;
+    if (last.endsWith("_responses")) return base + 8;
+    if (last.endsWith("_start")) return base;
+    return base;
+  }
+  if (last === "panel_assembled") return 12;
+  if (last === "personas") return 8;
+  if (last === "init") return 5;
+  return 10;
 }
 
 function CompletedSession({ run }: { run: RunDetail }) {
@@ -168,7 +232,7 @@ function CompletedSession({ run }: { run: RunDetail }) {
         {run.cost_usd && (
           <div className="meta-item">
             <span className="meta-label">Cost</span>
-            <span className="meta-value">${run.cost_usd.toFixed(2)}</span>
+            <span className="meta-value">${Number(run.cost_usd).toFixed(2)}</span>
           </div>
         )}
       </div>
@@ -217,6 +281,13 @@ function CompletedSession({ run }: { run: RunDetail }) {
             </div>
           )}
         </div>
+      )}
+
+      {run.progress && run.progress.length > 0 && (
+        <details className="report-raw" style={{ marginTop: 24 }}>
+          <summary>Deliberation log ({run.progress.length} steps)</summary>
+          <ProgressLog entries={run.progress} />
+        </details>
       )}
 
       {run.report_md && (
