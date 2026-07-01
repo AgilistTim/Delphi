@@ -75,7 +75,6 @@ async function callClaude(
     body: JSON.stringify({
       model: "claude-sonnet-5",
       max_tokens: maxTokens,
-      temperature,
       system,
       messages: [{ role: "user", content: userMessage }],
     }),
