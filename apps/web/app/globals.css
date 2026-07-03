@@ -121,6 +121,7 @@ h3 { font-family: 'Caveat', cursive; font-size: 22px; }
 .btn.ghost { background: transparent; box-shadow: none; }
 .btn.sm { padding: 4px 10px; font-size: 12px; }
 .btn.lg { padding: 10px 18px; font-size: 16px; }
+.btn.danger { background: var(--danger); color: var(--paper-3); border-color: var(--danger); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
 
 /* Pills */

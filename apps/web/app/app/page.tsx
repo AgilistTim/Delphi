@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Logo } from "../components/Logo";
 import { Avatar } from "../components/Avatar";
 import { DisclosureBanner } from "../components/DisclosureBanner";
+import { DeleteRunButton } from "../components/DeleteRunButton";
 import { Footer } from "../components/Footer";
 import { config } from "../lib/config";
 import { getUser } from "../lib/supabase/server";
@@ -142,12 +143,15 @@ export default async function DashboardPage() {
                 >
                   <div className="row between">
                     <span style={{ fontSize: 15, fontWeight: 700 }}>{s.question}</span>
-                    <span
-                      className={`pill ${
-                        s.status === "completed" ? "ok" : s.status === "error" ? "danger" : "accent"
-                      }`}
-                    >
-                      {s.status}
+                    <span className="row" style={{ gap: 6 }}>
+                      <span
+                        className={`pill ${
+                          s.status === "completed" ? "ok" : s.status === "error" ? "danger" : "accent"
+                        }`}
+                      >
+                        {s.status}
+                      </span>
+                      {!running && <DeleteRunButton runId={s.id} />}
                     </span>
                   </div>
                   <div className="mono" style={{ fontSize: 10, marginTop: 6 }}>

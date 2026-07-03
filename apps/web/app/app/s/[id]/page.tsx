@@ -20,6 +20,7 @@ export default function DeliberationPage({ params }: { params: { id: string } })
   const [run, setRun] = useState<RunState | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,9 +120,29 @@ export default function DeliberationPage({ params }: { params: { id: string } })
             <Link href="/app" className="btn sm ghost">
               leave · we&rsquo;ll email you
             </Link>
-            <span className="mono" style={{ fontSize: 10 }}>
-              you can close this tab · the run continues server-side
-            </span>
+            <button
+              className="btn sm danger"
+              disabled={stopping}
+              onClick={async () => {
+                setStopping(true);
+                try {
+                  const res = await fetch(`/api/session/${params.id}`, { method: "PATCH" });
+                  if (res.ok) {
+                    setError("Stopped by user");
+                    setRun((prev) => prev ? { ...prev, status: "error" } : prev);
+                  } else {
+                    const data = await res.json().catch(() => ({}));
+                    setError(data.error || "Failed to stop");
+                  }
+                } catch {
+                  setError("Failed to stop");
+                } finally {
+                  setStopping(false);
+                }
+              }}
+            >
+              {stopping ? "stopping..." : "stop run"}
+            </button>
           </div>
         </>
       )}
