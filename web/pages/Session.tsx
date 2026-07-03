@@ -214,9 +214,6 @@ function CompletedSession({ run }: { run: RunDetail }) {
   }, [run.report_md, md]);
 
   function handleDownloadPDF() {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
     const content = reportRef.current?.innerHTML || "";
     const escQ = run.question.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const completedStr = run.completed_at ? new Date(run.completed_at).toLocaleString() : "N/A";
@@ -282,9 +279,41 @@ function CompletedSession({ run }: { run: RunDetail }) {
       '</body></html>',
     ];
 
-    printWindow.document.write(parts.join("\n"));
-    printWindow.document.close();
-    setTimeout(function() { printWindow.print(); }, 400);
+    const html = parts.join("\n");
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "none";
+    document.body.appendChild(iframe);
+
+    const iframeDoc = iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      document.body.removeChild(iframe);
+      return;
+    }
+    iframeDoc.open();
+    iframeDoc.write(html);
+    iframeDoc.close();
+
+    iframe.onload = function() {
+      setTimeout(function() {
+        iframe.contentWindow?.print();
+        setTimeout(function() { document.body.removeChild(iframe); }, 1000);
+      }, 250);
+    };
+
+    // Fallback if onload already fired (some browsers)
+    setTimeout(function() {
+      if (document.body.contains(iframe)) {
+        try { iframe.contentWindow?.print(); } catch (_) {}
+        setTimeout(function() {
+          if (document.body.contains(iframe)) document.body.removeChild(iframe);
+        }, 1000);
+      }
+    }, 800);
   }
 
   return (
