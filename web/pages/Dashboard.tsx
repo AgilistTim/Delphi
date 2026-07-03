@@ -18,25 +18,26 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [hasKey, setHasKey] = useState(false);
 
+  async function loadRuns() {
+    const [runsRes, keyRes] = await Promise.all([
+      supabase
+        .from("runs")
+        .select("id, question, status, started_at, total_tokens, report")
+        .order("started_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("user_keys")
+        .select("user_id")
+        .eq("user_id", user!.id)
+        .maybeSingle()
+    ]);
+    setRuns(runsRes.data ?? []);
+    setHasKey(!!keyRes.data);
+    setLoading(false);
+  }
+
   useEffect(() => {
-    async function load() {
-      const [runsRes, keyRes] = await Promise.all([
-        supabase
-          .from("runs")
-          .select("id, question, status, started_at, total_tokens, report")
-          .order("started_at", { ascending: false })
-          .limit(50),
-        supabase
-          .from("user_keys")
-          .select("user_id")
-          .eq("user_id", user!.id)
-          .maybeSingle()
-      ]);
-      setRuns(runsRes.data ?? []);
-      setHasKey(!!keyRes.data);
-      setLoading(false);
-    }
-    load();
+    loadRuns();
   }, [user]);
 
   function statusBadge(status: string) {
@@ -92,28 +93,97 @@ export function DashboardPage() {
       ) : (
         <div className="runs-list">
           {runs.map((run) => (
-            <Link
-              key={run.id}
-              to={`/app/s/${run.id}`}
-              className="run-card"
-            >
-              <div className="run-card-top">
-                <h3 className="run-question">{run.question}</h3>
-                {statusBadge(run.status)}
-              </div>
-              <div className="run-card-meta">
-                <span>{new Date(run.started_at).toLocaleDateString()}</span>
-                {run.total_tokens && (
-                  <span>{(run.total_tokens / 1000).toFixed(1)}k tokens</span>
-                )}
-                {verdict(run.report) && (
-                  <span className="run-verdict">{verdict(run.report)}</span>
-                )}
-              </div>
-            </Link>
+            <div key={run.id} className="run-card" style={{ position: "relative" }}>
+              <Link
+                to={`/app/s/${run.id}`}
+                style={{ textDecoration: "none", color: "inherit", display: "block" }}
+              >
+                <div className="run-card-top">
+                  <h3 className="run-question">{run.question}</h3>
+                  {statusBadge(run.status)}
+                </div>
+                <div className="run-card-meta">
+                  <span>{new Date(run.started_at).toLocaleDateString()}</span>
+                  {run.total_tokens && (
+                    <span>{(run.total_tokens / 1000).toFixed(1)}k tokens</span>
+                  )}
+                  {verdict(run.report) && (
+                    <span className="run-verdict">{verdict(run.report)}</span>
+                  )}
+                </div>
+              </Link>
+              {(run.status === "completed" || run.status === "error") && (
+                <DeleteButton runId={run.id} onDeleted={loadRuns} />
+              )}
+            </div>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function DeleteButton({ runId, onDeleted }: { runId: string; onDeleted: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  if (confirming) {
+    return (
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          display: "flex",
+          gap: 6,
+          alignItems: "center",
+          background: "var(--bg-surface, #fff)",
+          padding: "4px 8px",
+          borderRadius: 6,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.12)"
+        }}
+        onClick={(e) => e.preventDefault()}
+      >
+        <button
+          className="btn btn-danger"
+          style={{ fontSize: 12, padding: "3px 8px" }}
+          disabled={deleting}
+          onClick={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDeleting(true);
+            const { error } = await supabase.from("runs").delete().eq("id", runId);
+            if (!error) onDeleted();
+            else { setDeleting(false); setConfirming(false); }
+          }}
+        >
+          {deleting ? "..." : "Confirm"}
+        </button>
+        <button
+          className="btn btn-secondary"
+          style={{ fontSize: 12, padding: "3px 8px" }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirming(false); }}
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className="btn btn-secondary"
+      style={{
+        position: "absolute",
+        top: 8,
+        right: 8,
+        fontSize: 11,
+        padding: "2px 8px",
+        opacity: 0.6
+      }}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirming(true); }}
+    >
+      Delete
+    </button>
   );
 }

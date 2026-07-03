@@ -126,6 +126,8 @@ export function SessionPage() {
         </div>
       )}
 
+      <StopButton runId={run.id} onStopped={loadRun} />
+
       <p className="deliberation-note" style={{ marginTop: 24 }}>
         This page updates automatically every 2 seconds.
       </p>
@@ -358,4 +360,50 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function StopButton({ runId, onStopped }: { runId: string; onStopped: () => void }) {
+  const [status, setStatus] = useState<"idle" | "confirming" | "stopping" | "done">("idle");
+
+  if (status === "done") return null;
+
+  if (status === "confirming") {
+    return (
+      <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "center" }}>
+        <span style={{ fontSize: 13 }}>Stop this deliberation?</span>
+        <button
+          className="btn btn-danger"
+          onClick={async () => {
+            setStatus("stopping");
+            const { error } = await supabase
+              .from("runs")
+              .update({ status: "error", error: "Stopped by user", completed_at: new Date().toISOString() })
+              .eq("id", runId);
+            if (!error) {
+              setStatus("done");
+              onStopped();
+            } else {
+              setStatus("idle");
+            }
+          }}
+        >
+          Yes, stop it
+        </button>
+        <button className="btn btn-secondary" onClick={() => setStatus("idle")}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className="btn btn-danger"
+      style={{ marginTop: 16 }}
+      disabled={status === "stopping"}
+      onClick={() => setStatus("confirming")}
+    >
+      {status === "stopping" ? "Stopping..." : "Stop run"}
+    </button>
+  );
 }
