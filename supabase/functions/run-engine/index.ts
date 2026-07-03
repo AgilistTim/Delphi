@@ -242,6 +242,11 @@ Requirements:
       const responses: ExpertResponse[] = [];
       for (let i = 0; i < personas.length; i++) {
         const persona = personas[i];
+        await progress.log(
+          `round_${round}_expert_${i + 1}`,
+          `Expert ${i + 1}/${personas.length}: ${persona.role} (${persona.expertise}) thinking...`
+        );
+
         const systemPrompt = `You are ${persona.role}, an expert in ${persona.expertise}. Your perspective: ${persona.perspective}.
 
 Provide your expert analysis as a JSON object only:
@@ -270,6 +275,10 @@ Provide your expert analysis as a JSON object only:
             confidence: Math.max(1, Math.min(10, parsed?.confidence || 6)),
             sources: Array.isArray(parsed?.sources) ? parsed.sources.slice(0, 3) : [],
           });
+          await progress.log(
+            `round_${round}_expert_${i + 1}_done`,
+            `Expert ${i + 1}/${personas.length}: ${persona.role} responded (confidence: ${responses[responses.length - 1].confidence}/10)`
+          );
         } catch (err: any) {
           responses.push({
             agent_id: `expert-${i}`,
@@ -279,6 +288,10 @@ Provide your expert analysis as a JSON object only:
             confidence: 0,
             sources: [],
           });
+          await progress.log(
+            `round_${round}_expert_${i + 1}_error`,
+            `Expert ${i + 1}/${personas.length}: ${persona.role} failed to respond`
+          );
         }
       }
 
